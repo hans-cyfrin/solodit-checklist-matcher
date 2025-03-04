@@ -1,8 +1,20 @@
-from sentence_transformers import SentenceTransformer
 import numpy as np
 
-# Initialize the model
-model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+# Initialize the model lazily to avoid circular imports
+_model = None
+
+def get_model():
+    """
+    Get the SentenceTransformer model, initializing it if necessary.
+
+    Returns:
+        SentenceTransformer: The model instance
+    """
+    global _model
+    if _model is None:
+        from sentence_transformers import SentenceTransformer
+        _model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    return _model
 
 def generate_embedding(text):
     """
@@ -18,6 +30,7 @@ def generate_embedding(text):
         return np.zeros(384)  # Return zero vector for empty text
 
     # Generate embedding
+    model = get_model()
     embedding = model.encode(text)
 
     return embedding

@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
+from sqlalchemy.sql import text
 
 from database import get_db, init_db
 from models import ChecklistItem, PendingChange
@@ -53,8 +54,13 @@ class PRResponse(BaseModel):
 # Initialize database on startup
 @app.on_event("startup")
 async def startup_event():
-    init_db()
-    await sync_checklist()
+    try:
+        init_db()
+        await sync_checklist()
+    except Exception as e:
+        print(f"Error during startup: {str(e)}")
+        print("Application will continue without database initialization.")
+        print("Please make sure the PostgreSQL database is running and accessible.")
 
 # Endpoints
 @app.get("/")
@@ -170,6 +176,22 @@ async def resync_checklist():
     background_tasks = BackgroundTasks()
     background_tasks.add_task(sync_checklist)
     return {"message": "Checklist resync started"}
+
+@app.get("/health")
+async def health_check():
+    """Check if the application is healthy"""
+    try:
+        # Try to connect to the database
+        db = next(get_db())
+        db.execute(text("SELECT 1"))
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"disconnected: {str(e)}"
+
+    return {
+        "status": "ok",
+        "database": db_status
+    }
 
 # Background task to sync checklist
 async def sync_checklist():

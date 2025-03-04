@@ -20,5 +20,14 @@ COPY . .
 # Expose port
 EXPOSE 8000
 
+# Create entrypoint script
+RUN echo '#!/bin/sh\n\
+echo "Initializing database..."\n\
+python init_db.py\n\
+echo "Starting application..."\n\
+exec uvicorn main:app --host 0.0.0.0 --port 8000 "$@"\n\
+' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+
 # Command to run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["--reload"]

@@ -6,20 +6,26 @@ services:
     image: ankane/pgvector:latest
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: admin
       POSTGRES_DB: solodit_checklist
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   # Backend API service
   backend:
     build: ./backend
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://postgres:password@postgres:5432/solodit_checklist
+      - DATABASE_URL=postgresql://postgres:admin@postgres:5432/solodit_checklist
       - API_HOST=0.0.0.0
       - API_PORT=8000
       - CORS_ORIGINS=http://localhost:3000
@@ -27,7 +33,8 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    # The entrypoint script in the Dockerfile will handle database initialization
+    # and starting the application
 
   # Frontend service
   frontend:

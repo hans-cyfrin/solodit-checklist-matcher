@@ -31,6 +31,7 @@ Solodit Checklist Matcher is a tool designed to help security auditors match fin
 ### Prerequisites
 - Docker and Docker Compose
 - GitHub token (for PR creation)
+- PostgreSQL (if running without Docker)
 
 ### Setup
 
@@ -50,12 +51,33 @@ Solodit Checklist Matcher is a tool designed to help security auditors match fin
    GITHUB_TOKEN=your_github_token
    ```
 
-4. Start the application using Docker Compose:
+4. Initialize the database (if running without Docker):
+   ```
+   cd backend
+   python init_db.py
+   ```
+
+5. Start the application:
+
+   **Using Docker Compose (recommended):**
    ```
    docker-compose up
    ```
 
-5. Access the application:
+   **Without Docker:**
+   ```
+   # Terminal 1 - Backend
+   cd backend
+   pip install -r requirements.txt
+   python -m uvicorn main:app --reload
+
+   # Terminal 2 - Frontend
+   cd frontend
+   npm install
+   npm start
+   ```
+
+6. Access the application:
    - Frontend: http://localhost:3000
    - Backend API: http://localhost:8000
    - API Documentation: http://localhost:8000/docs
