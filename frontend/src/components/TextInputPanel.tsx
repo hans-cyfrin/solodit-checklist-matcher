@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Box, TextField, Button, Typography, CircularProgress, Grid } from '@mui/material';
+import React, { useState, useContext } from 'react';
+import { Box, TextField, Button, Typography, CircularProgress, Grid, useTheme } from '@mui/material';
 import axios from 'axios';
 
 interface TextInputPanelProps {
@@ -19,6 +19,7 @@ const TextInputPanel: React.FC<TextInputPanelProps> = ({
   onMatch,
   isLoading,
 }) => {
+  const theme = useTheme();
   const [isLoadingUrl, setIsLoadingUrl] = useState(false);
   const [urlError, setUrlError] = useState<string | null>(null);
 
@@ -146,9 +147,11 @@ const TextInputPanel: React.FC<TextInputPanelProps> = ({
             padding: '12px',
             fontFamily: 'inherit',
             fontSize: 'inherit',
-            border: '1px solid rgba(0, 0, 0, 0.23)',
+            border: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.23)' : 'rgba(0, 0, 0, 0.23)'}`,
             borderRadius: '4px',
-            resize: 'none'
+            resize: 'none',
+            backgroundColor: theme.palette.mode === 'dark' ? theme.palette.background.paper : '#fff',
+            color: theme.palette.text.primary
           }}
         />
       </Box>
