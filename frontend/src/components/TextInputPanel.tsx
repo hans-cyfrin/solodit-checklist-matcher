@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, TextField, Button, Typography, CircularProgress, Grid, Alert } from '@mui/material';
+import { Box, TextField, Button, Typography, CircularProgress, Grid } from '@mui/material';
 import axios from 'axios';
 
 interface TextInputPanelProps {
@@ -102,12 +102,12 @@ const TextInputPanel: React.FC<TextInputPanelProps> = ({
   };
 
   return (
-    <Box>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Typography variant="h6" gutterBottom>
         Input
       </Typography>
 
-      <Grid container spacing={2}>
+      <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid item xs={12}>
           <TextField
             label="URL (optional)"
@@ -118,45 +118,51 @@ const TextInputPanel: React.FC<TextInputPanelProps> = ({
             placeholder="https://example.com/audit-report"
             error={!!urlError}
             helperText={urlError}
-            sx={{ mb: 2 }}
+            sx={{ mb: 1 }}
           />
           <Button
             variant="outlined"
             onClick={handleLoadUrl}
             disabled={!inputUrl || isLoadingUrl || !!urlError}
-            sx={{ mb: 2 }}
             startIcon={isLoadingUrl ? <CircularProgress size={20} color="inherit" /> : null}
           >
             {isLoadingUrl ? 'Loading...' : 'Load Content'}
           </Button>
         </Grid>
-
-        <Grid item xs={12}>
-          <TextField
-            label="Issue Description"
-            fullWidth
-            multiline
-            rows={6}
-            variant="outlined"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder="Describe the security issue or vulnerability..."
-            sx={{ mb: 2 }}
-          />
-        </Grid>
-
-        <Grid item xs={12}>
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={onMatch}
-            disabled={isLoading || !inputText.trim()}
-            startIcon={isLoading ? <CircularProgress size={20} color="inherit" /> : null}
-          >
-            {isLoading ? 'Matching...' : 'Match with Checklist'}
-          </Button>
-        </Grid>
       </Grid>
+
+      <Typography variant="subtitle1" gutterBottom>
+        Issue Description
+      </Typography>
+      
+      <Box sx={{ flexGrow: 1, mb: 2 }}>
+        <textarea
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          placeholder="Describe the security issue or vulnerability..."
+          style={{ 
+            width: '100%', 
+            height: '100%', 
+            padding: '12px',
+            fontFamily: 'inherit',
+            fontSize: 'inherit',
+            border: '1px solid rgba(0, 0, 0, 0.23)',
+            borderRadius: '4px',
+            resize: 'none'
+          }}
+        />
+      </Box>
+
+      <Button
+        variant="contained"
+        color="primary"
+        onClick={onMatch}
+        disabled={isLoading || !inputText.trim()}
+        startIcon={isLoading ? <CircularProgress size={20} color="inherit" /> : null}
+        fullWidth
+      >
+        {isLoading ? 'Matching...' : 'Match with Checklist'}
+      </Button>
     </Box>
   );
 };

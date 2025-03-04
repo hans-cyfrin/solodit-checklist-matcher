@@ -7,7 +7,6 @@ import {
   ListItemText,
   Checkbox,
   Button,
-  Divider,
   Chip,
   CircularProgress,
   Accordion,
@@ -18,14 +17,9 @@ import {
   Select,
   FormControl,
   InputLabel,
-  Grid,
-  IconButton,
-  Tooltip,
+  Link,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import FilterListIcon from '@mui/icons-material/FilterList';
-import SortIcon from '@mui/icons-material/Sort';
-import InfoIcon from '@mui/icons-material/Info';
 import ReactMarkdown from 'react-markdown';
 import { MatchResult } from '../App';
 
@@ -57,25 +51,25 @@ const MatchResults: React.FC<MatchResultsProps> = ({
   // Filter and sort matches
   const filteredMatches = React.useMemo(() => {
     if (!results || !results.matches) return [];
-    
+
     let filtered = [...results.matches];
-    
+
     // Apply category filter
     if (filterCategory && filterCategory !== 'All') {
       filtered = filtered.filter(item => item.category === filterCategory);
     }
-    
+
     // Apply search filter
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase();
       filtered = filtered.filter(
-        item => 
+        item =>
           item.question.toLowerCase().includes(searchLower) ||
           item.description.toLowerCase().includes(searchLower) ||
           item.category.toLowerCase().includes(searchLower)
       );
     }
-    
+
     // Sort results
     filtered.sort((a, b) => {
       if (sortBy === 'score') {
@@ -86,189 +80,169 @@ const MatchResults: React.FC<MatchResultsProps> = ({
         return a.id.localeCompare(b.id);
       }
     });
-    
+
     return filtered;
   }, [results, searchTerm, filterCategory, sortBy]);
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h6">
-          Matching Checklist Items
-          <Tooltip title="These items are semantically matched to your input text">
-            <IconButton size="small" sx={{ ml: 1 }}>
-              <InfoIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Typography variant="h6" gutterBottom>
+        Match Results
+      </Typography>
+
+      {/* Extracted Content Section */}
+      <Box sx={{ 
+        mb: 2, 
+        p: 2, 
+        bgcolor: results.preprocessing_applied ? '#e3f2fd' : '#f5f5f5', 
+        borderRadius: 1,
+        border: results.preprocessing_applied ? '1px solid #90caf9' : 'none'
+      }}>
+        <Typography variant="subtitle2" gutterBottom color={results.preprocessing_applied ? 'primary' : 'textSecondary'}>
+          {results.preprocessing_applied 
+            ? 'AI-Processed Content:' 
+            : 'Original Content:'}
         </Typography>
-        
-        <Box>
-          <Tooltip title="Show/Hide Filters">
-            <IconButton onClick={() => setShowFilters(!showFilters)}>
-              <FilterListIcon />
-            </IconButton>
-          </Tooltip>
-        </Box>
+        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+          {results.preprocessed_text || results.input_text}
+        </Typography>
+        {results.preprocessing_applied && (
+          <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 1 }}>
+            The content above has been processed by AI to extract the most relevant technical details.
+          </Typography>
+        )}
       </Box>
 
-      {showFilters && (
-        <Box sx={{ mb: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
-          <Grid container spacing={2}>
-            <Grid item xs={12} md={4}>
-              <TextField
-                fullWidth
-                label="Search"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                size="small"
-                placeholder="Search by ID, question, or description"
-              />
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Sort By</InputLabel>
-                <Select
-                  value={sortBy}
-                  label="Sort By"
-                  onChange={(e) => setSortBy(e.target.value as 'score' | 'id')}
-                >
-                  <MenuItem value="score">Match Score</MenuItem>
-                  <MenuItem value="id">ID</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Filter Category</InputLabel>
-                <Select
-                  value={filterCategory}
-                  label="Filter Category"
-                  onChange={(e) => setFilterCategory(e.target.value)}
-                >
-                  <MenuItem value="">All Categories</MenuItem>
-                  {categories.map((category) => (
-                    <MenuItem key={category} value={category}>
-                      {category}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-          </Grid>
-        </Box>
-      )}
+      <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+        <TextField
+          label="Search"
+          variant="outlined"
+          size="small"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          sx={{ flexGrow: 1, minWidth: '200px' }}
+        />
 
-      {results.matches.length === 0 ? (
-        <Typography variant="body1" color="text.secondary">
-          No matching checklist items found. Try a different description.
-        </Typography>
-      ) : filteredMatches.length === 0 ? (
-        <Typography variant="body1" color="text.secondary">
-          No items match your current filters. Try adjusting your search criteria.
-        </Typography>
-      ) : (
-        <>
-          <List>
-            {filteredMatches.map((item) => (
-              <React.Fragment key={item.id}>
-                <ListItem alignItems="flex-start" sx={{ 
-                  bgcolor: selectedItems.includes(item.id) ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
-                  transition: 'background-color 0.3s',
-                  '&:hover': {
-                    bgcolor: selectedItems.includes(item.id) ? 'rgba(25, 118, 210, 0.12)' : 'rgba(0, 0, 0, 0.04)',
-                  }
-                }}>
+        <FormControl size="small" sx={{ minWidth: '150px' }}>
+          <InputLabel id="category-filter-label">Category</InputLabel>
+          <Select
+            labelId="category-filter-label"
+            value={filterCategory}
+            label="Category"
+            onChange={(e) => setFilterCategory(e.target.value)}
+          >
+            <MenuItem value="All">All Categories</MenuItem>
+            {Array.from(new Set(results.matches.map(item => item.category))).map(category => (
+              <MenuItem key={category} value={category}>{category}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <FormControl size="small" sx={{ minWidth: '120px' }}>
+          <InputLabel id="sort-by-label">Sort By</InputLabel>
+          <Select
+            labelId="sort-by-label"
+            value={sortBy}
+            label="Sort By"
+            onChange={(e) => setSortBy(e.target.value as 'score' | 'id')}
+          >
+            <MenuItem value="score">Relevance</MenuItem>
+            <MenuItem value="id">ID</MenuItem>
+          </Select>
+        </FormControl>
+      </Box>
+
+      <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
+        {filteredMatches.length === 0 ? (
+          <Typography variant="body1" sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>
+            No matches found. Try adjusting your search or filters.
+          </Typography>
+        ) : (
+          filteredMatches.map((item) => (
+            <Accordion key={item.id} sx={{ mb: 1 }}>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
                   <Checkbox
-                    edge="start"
                     checked={selectedItems.includes(item.id)}
                     onChange={() => onItemSelect(item.id)}
+                    onClick={(e) => e.stopPropagation()}
                   />
-                  <ListItemText
-                    primary={
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                        <Typography variant="subtitle1" fontWeight="bold">{item.id}</Typography>
+                  <Box sx={{ ml: 1, flexGrow: 1 }}>
+                    <Typography variant="subtitle1">
+                      {item.question}
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Chip
+                        label={item.category}
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                      />
+                      {item.score !== undefined && (
                         <Chip
-                          label={`${Math.round(item.score! * 100)}% match`}
+                          label={`Score: ${(item.score * 100).toFixed(0)}%`}
                           size="small"
-                          color={item.score! > 0.7 ? 'success' : item.score! > 0.5 ? 'primary' : 'default'}
-                          sx={{ fontWeight: 'bold' }}
+                          color={item.score > 0.7 ? 'success' : item.score > 0.5 ? 'warning' : 'default'}
+                          variant="outlined"
                         />
-                        <Chip label={item.category} size="small" variant="outlined" />
-                      </Box>
-                    }
-                    secondary={
-                      <Box sx={{ mt: 1 }}>
-                        <Typography variant="subtitle2" gutterBottom fontWeight="medium">
-                          {item.question}
-                        </Typography>
+                      )}
+                    </Box>
+                  </Box>
+                </Box>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Typography variant="body2" gutterBottom>
+                  <ReactMarkdown>{item.description}</ReactMarkdown>
+                </Typography>
+                {item.remediation && (
+                  <>
+                    <Typography variant="subtitle2" gutterBottom sx={{ mt: 1 }}>
+                      Remediation:
+                    </Typography>
+                    <Typography variant="body2" gutterBottom>
+                      <ReactMarkdown>{item.remediation}</ReactMarkdown>
+                    </Typography>
+                  </>
+                )}
+                {item.references && item.references.length > 0 && (
+                  <>
+                    <Typography variant="subtitle2" gutterBottom sx={{ mt: 1 }}>
+                      References:
+                    </Typography>
+                    <List dense>
+                      {item.references.map((ref, index) => (
+                        <ListItem key={index} sx={{ py: 0 }}>
+                          <ListItemText
+                            primary={
+                              ref.startsWith('http') ? (
+                                <Link href={ref} target="_blank" rel="noopener noreferrer">
+                                  {ref}
+                                </Link>
+                              ) : ref
+                            }
+                          />
+                        </ListItem>
+                      ))}
+                    </List>
+                  </>
+                )}
+              </AccordionDetails>
+            </Accordion>
+          ))
+        )}
+      </Box>
 
-                        <Accordion>
-                          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                            <Typography>Details</Typography>
-                          </AccordionSummary>
-                          <AccordionDetails>
-                            <Typography variant="subtitle2" gutterBottom fontWeight="medium">
-                              Description:
-                            </Typography>
-                            <Box sx={{ bgcolor: 'background.paper', p: 1, borderRadius: 1, mb: 2 }}>
-                              <ReactMarkdown>{item.description}</ReactMarkdown>
-                            </Box>
-
-                            <Typography variant="subtitle2" gutterBottom fontWeight="medium">
-                              Remediation:
-                            </Typography>
-                            <Box sx={{ bgcolor: 'background.paper', p: 1, borderRadius: 1, mb: 2 }}>
-                              <ReactMarkdown>{item.remediation}</ReactMarkdown>
-                            </Box>
-
-                            {item.references.length > 0 && (
-                              <>
-                                <Typography variant="subtitle2" gutterBottom fontWeight="medium">
-                                  References:
-                                </Typography>
-                                <List dense>
-                                  {item.references.map((ref, index) => (
-                                    <ListItem key={index}>
-                                      <ListItemText>
-                                        <a href={ref} target="_blank" rel="noopener noreferrer">
-                                          {ref}
-                                        </a>
-                                      </ListItemText>
-                                    </ListItem>
-                                  ))}
-                                </List>
-                              </>
-                            )}
-                          </AccordionDetails>
-                        </Accordion>
-                      </Box>
-                    }
-                  />
-                </ListItem>
-                <Divider />
-              </React.Fragment>
-            ))}
-          </List>
-
-          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="body2">
-              {selectedItems.length} item{selectedItems.length !== 1 ? 's' : ''} selected 
-              {filteredMatches.length !== results.matches.length && 
-                ` (showing ${filteredMatches.length} of ${results.matches.length})`}
-            </Typography>
-
-            <Button
-              variant="contained"
-              color="primary"
-              onClick={onProposeReference}
-              disabled={!canProposeReference || isProposing}
-              startIcon={isProposing ? <CircularProgress size={20} color="inherit" /> : null}
-            >
-              {isProposing ? 'Proposing...' : 'Propose Reference Update'}
-            </Button>
-          </Box>
-        </>
-      )}
+      <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={onProposeReference}
+          disabled={!canProposeReference || isProposing}
+          startIcon={isProposing ? <CircularProgress size={20} color="inherit" /> : null}
+        >
+          {isProposing ? 'Proposing...' : 'Propose Reference'}
+        </Button>
+      </Box>
     </Box>
   );
 };

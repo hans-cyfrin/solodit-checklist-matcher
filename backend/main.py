@@ -9,14 +9,34 @@ from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
 from sqlalchemy.sql import text
 from contextlib import asynccontextmanager
+import logging
 
 from database import get_db, init_db
 from models import ChecklistItem, PendingChange
-from embeddings import generate_checklist_item_embedding, semantic_search
+from embeddings import generate_checklist_item_embedding, semantic_search, preprocess_with_openai
 from github_integration import fetch_checklist_from_github, create_github_pr
 
 # Load environment variables
 load_dotenv()
+
+# Set Huggingface tokenizers parallelism to avoid warnings
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+)
+logger = logging.getLogger(__name__)
+
+# Set third-party loggers to WARNING level to reduce noise
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("github").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+logging.getLogger("transformers").setLevel(logging.WARNING)
+logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
 
 # Initialize database on startup
 @asynccontextmanager
@@ -87,16 +107,33 @@ async def match_text(request: Request, match_request: MatchRequest, db: Session 
     if not match_request.text.strip():
         raise HTTPException(status_code=400, detail="Input text cannot be empty")
 
-    # Get all checklist items with embeddings
-    items = db.query(ChecklistItem).all()
-    embeddings = [(item.id, item.embedding) for item in items if item.embedding is not None]
-
-    if not embeddings:
-        raise HTTPException(status_code=500, detail="No checklist items with embeddings found. Please ensure the database is properly initialized.")
-
     try:
-        # Perform semantic search
-        matches = semantic_search(match_request.text, embeddings, top_k=5)
+        # Get all checklist items with embeddings
+        items = db.query(ChecklistItem).all()
+        embeddings = [(item.id, item.embedding) for item in items if item.embedding is not None]
+
+        if not embeddings:
+            raise HTTPException(status_code=500, detail="No checklist items with embeddings found. Please ensure the database is properly initialized.")
+
+        # Default to using the original text
+        preprocessed_text = match_request.text
+        preprocessing_applied = False
+
+        # Try to preprocess the input text with OpenAI
+        try:
+            processed = await preprocess_with_openai(match_request.text)
+            # Only use the preprocessed text if it's not empty and different from the original
+            if processed and processed != match_request.text:
+                preprocessed_text = processed
+                preprocessing_applied = True
+                logger.info(f"Using preprocessed text for matching. Original length: {len(match_request.text)}, Processed length: {len(preprocessed_text)}")
+            else:
+                logger.info("Using original text for matching (no preprocessing applied)")
+        except Exception as e:
+            logger.warning(f"Error in preprocessing: {str(e)}. Using original text.")
+
+        # Perform semantic search with the text (preprocessed or original)
+        matches = semantic_search(preprocessed_text, embeddings, top_k=10)
 
         # Get matched items
         matched_items = []
@@ -107,12 +144,18 @@ async def match_text(request: Request, match_request: MatchRequest, db: Session 
                 item_dict["score"] = score
                 matched_items.append(item_dict)
 
-        return {
+        # Prepare the response
+        response_data = {
             "matches": matched_items,
             "input_text": match_request.text,
-            "input_url": match_request.url
+            "input_url": match_request.url,
+            "preprocessed_text": preprocessed_text,
+            "preprocessing_applied": preprocessing_applied
         }
+
+        return response_data
     except Exception as e:
+        logger.error(f"Error in match_text: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error performing semantic search: {str(e)}")
 
 @app.post("/propose-reference")
@@ -198,36 +241,107 @@ async def create_pr(request: Request, background_tasks: BackgroundTasks, db: Ses
     # Get pending changes
     pending_changes = db.query(PendingChange).filter(PendingChange.status == "pending").all()
 
+    logger.info(f"Create PR request received with {len(pending_changes)} pending changes")
+
     if not pending_changes:
+        logger.warning("No pending changes found when trying to create PR")
         raise HTTPException(status_code=400, detail="No pending changes found")
 
     try:
         # Get current checklist
         try:
+            logger.info("Fetching checklist from GitHub")
             checklist_data = await fetch_checklist_from_github()
+            logger.info(f"Successfully fetched checklist data")
         except Exception as e:
+            logger.error(f"Failed to fetch checklist from GitHub: {str(e)}")
             raise HTTPException(status_code=503,
                 detail=f"Failed to fetch checklist from GitHub: {str(e)}. Please check your network connection and GitHub API access.")
+
+        # Extract all items from the nested structure
+        all_items = []
+
+        def extract_items(data, parent_category=""):
+            if not isinstance(data, list):
+                return
+
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+
+                # If this is a category with nested data
+                if "data" in item and isinstance(item["data"], list):
+                    category = item.get("category", parent_category)
+                    extract_items(item["data"], category)
+
+                # If this is an actual checklist item with an ID
+                elif "id" in item:
+                    # Add parent category if not present
+                    if "category" not in item and parent_category:
+                        item["category"] = parent_category
+                    all_items.append(item)
+
+        # Process the nested structure
+        extract_items(checklist_data)
+        logger.info(f"Extracted {len(all_items)} checklist items from the nested structure")
+
+        # Create a map of item IDs to their locations in the nested structure
+        item_map = {}
+
+        def map_items(data, path=[]):
+            if not isinstance(data, list):
+                return
+
+            for i, item in enumerate(data):
+                if not isinstance(item, dict):
+                    continue
+
+                current_path = path + [i]
+
+                # If this is a category with nested data
+                if "data" in item and isinstance(item["data"], list):
+                    map_items(item["data"], current_path + ["data"])
+
+                # If this is an actual checklist item with an ID
+                elif "id" in item:
+                    item_map[item["id"]] = {
+                        "path": current_path,
+                        "item": item
+                    }
+
+        # Create the item map
+        map_items(checklist_data)
+        logger.info(f"Created map of {len(item_map)} checklist items")
 
         # Update references in checklist
         changes_applied = 0
         for change in pending_changes:
-            for item in checklist_data:
-                if item["id"] == change.checklist_item_id:
-                    # Ensure references is a list
-                    if "references" not in item:
-                        item["references"] = []
+            logger.debug(f"Processing change for item {change.checklist_item_id}")
 
-                    # Add URL if not already present
-                    if change.source_url not in item["references"]:
-                        item["references"].append(change.source_url)
-                        changes_applied += 1
+            # Find the item in the map
+            if change.checklist_item_id in item_map:
+                item = item_map[change.checklist_item_id]["item"]
+
+                # Ensure references is a list
+                if "references" not in item:
+                    item["references"] = []
+
+                # Add URL if not already present
+                if change.source_url not in item["references"]:
+                    item["references"].append(change.source_url)
+                    changes_applied += 1
+                    logger.info(f"Added reference {change.source_url} to item {change.checklist_item_id}")
+            else:
+                logger.warning(f"Checklist item {change.checklist_item_id} not found in GitHub data")
+
+        logger.info(f"Applied {changes_applied} changes to checklist")
 
         if changes_applied == 0:
             # All changes were already applied, but we'll still update the status
             for change in pending_changes:
                 change.status = "approved"
             db.commit()
+            logger.info("No new changes to apply, updating status of pending changes to approved")
 
             return {
                 "pr_number": 0,
@@ -237,20 +351,38 @@ async def create_pr(request: Request, background_tasks: BackgroundTasks, db: Ses
 
         # Create PR
         try:
+            logger.info("Creating GitHub PR")
+
+            # Convert pending changes to dict for PR creation
+            pending_changes_dict = []
+            for change in pending_changes:
+                try:
+                    change_dict = change.to_dict()
+                    pending_changes_dict.append(change_dict)
+                except Exception as e:
+                    logger.error(f"Error converting change to dict: {str(e)}")
+
+            logger.info(f"Sending checklist data with {len(pending_changes_dict)} changes to GitHub")
+
+            # Don't log the entire checklist data
             pr_info = create_github_pr(
                 updated_checklist=checklist_data,
-                pending_changes=[change.to_dict() for change in pending_changes]
+                pending_changes=pending_changes_dict
             )
+            logger.info(f"Successfully created PR: {pr_info}")
 
             # Update status of pending changes
             for change in pending_changes:
                 change.status = "approved"
 
             db.commit()
+            logger.info("Updated status of all pending changes to approved")
 
             return pr_info
         except Exception as e:
             error_message = str(e)
+            logger.error(f"Failed to create PR: {error_message}", exc_info=True)
+
             if "token" in error_message.lower():
                 error_message = "GitHub token is invalid or missing. Please check your configuration."
             elif "permission" in error_message.lower():
@@ -262,6 +394,7 @@ async def create_pr(request: Request, background_tasks: BackgroundTasks, db: Ses
         raise
     except Exception as e:
         db.rollback()
+        logger.error(f"Unexpected error creating PR: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Unexpected error creating PR: {str(e)}")
 
 @app.post("/resync")

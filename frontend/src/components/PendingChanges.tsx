@@ -6,12 +6,10 @@ import {
   ListItem,
   ListItemText,
   Button,
-  Divider,
   CircularProgress,
   Alert,
   Link,
   Paper,
-  Chip,
   IconButton,
   Tooltip,
   Dialog,
@@ -21,7 +19,6 @@ import {
   TextField,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
-import InfoIcon from '@mui/icons-material/Info';
 import { ChecklistItem, PendingChange } from '../App';
 
 interface PendingChangesProps {
@@ -112,118 +109,123 @@ const PendingChanges: React.FC<PendingChangesProps> = ({
   };
 
   return (
-    <Box>
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h6">
-          Pending Reference Changes
-          <Tooltip title="These changes will be included in the next GitHub PR">
-            <IconButton size="small" sx={{ ml: 1 }}>
-              <InfoIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        </Typography>
-        
-        {pendingChanges.length > 0 && (
+        <Typography variant="h6">Pending Changes</Typography>
+        <Box>
           <Button
             variant="contained"
             color="primary"
             onClick={() => setConfirmDialogOpen(true)}
-            disabled={isCreatingPr}
+            disabled={!pendingChanges || pendingChanges.length === 0 || isCreatingPr}
             startIcon={isCreatingPr ? <CircularProgress size={20} color="inherit" /> : null}
           >
-            {isCreatingPr ? 'Creating PR...' : 'Create GitHub PR'}
+            {isCreatingPr ? 'Creating PR...' : 'Create PR'}
           </Button>
-        )}
+        </Box>
       </Box>
 
       {prResult && (
         <Alert severity="success" sx={{ mb: 2 }}>
-          Successfully created PR #{prResult.pr_number} with {prResult.num_changes} changes.{' '}
-          <Link href={prResult.pr_url} target="_blank" rel="noopener noreferrer">
-            View PR on GitHub
-          </Link>
+          <Typography>
+            PR #{prResult.pr_number} created successfully with {prResult.num_changes} changes.{' '}
+            <Link href={prResult.pr_url} target="_blank" rel="noopener noreferrer">
+              View on GitHub
+            </Link>
+          </Typography>
         </Alert>
       )}
 
-      {pendingChanges && pendingChanges.length === 0 ? (
-        <Typography variant="body1" sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>
-          No pending changes. Match some text and propose references to see them here.
-        </Typography>
-      ) : (
-        <Box>
-          {Object.entries(changesByItem).map(([checklistItemId, changes]) => {
-            const item = getChecklistItem(checklistItemId);
-            if (!item) return null;
-            
-            return (
-              <Paper key={checklistItemId} sx={{ mb: 3, overflow: 'hidden' }}>
-                <Box sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', px: 2, py: 1 }}>
-                  <Typography variant="subtitle1">
-                    {item.category} - {item.question}
-                  </Typography>
-                </Box>
-                
-                <Box sx={{ p: 2 }}>
-                  <Typography variant="body2" sx={{ mb: 1 }}>
-                    {item.description}
-                  </Typography>
-                  
-                  <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>
-                    Proposed References:
-                  </Typography>
-                  
-                  <List dense>
-                    {changes.map((change) => (
-                      <ListItem
-                        key={change.change_id}
-                        secondaryAction={
-                          onDeleteChange && (
-                            <Tooltip title="Delete this proposed reference">
-                              <IconButton
-                                edge="end"
-                                aria-label="delete"
-                                onClick={() => handleDeleteClick(change.change_id)}
-                                disabled={isDeletingChange}
-                              >
-                                <DeleteIcon />
-                              </IconButton>
-                            </Tooltip>
-                          )
-                        }
-                      >
-                        <ListItemText
-                          primary={
-                            <Link
-                              href={change.source_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              sx={{ wordBreak: 'break-all' }}
-                            >
-                              {change.source_url}
-                            </Link>
-                          }
-                          secondary={`Added: ${new Date(change.created_at).toLocaleString()}`}
-                        />
-                      </ListItem>
-                    ))}
-                  </List>
-                </Box>
-              </Paper>
-            );
-          })}
-        </Box>
-      )}
+      <Box sx={{ mb: 2 }}>
+        <TextField
+          label="Search"
+          variant="outlined"
+          size="small"
+          fullWidth
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Search by checklist item or URL..."
+        />
+      </Box>
 
-      {/* Confirmation Dialog for PR */}
+      <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
+        {pendingChanges && pendingChanges.length === 0 ? (
+          <Typography variant="body1" sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>
+            No pending changes. Match some text and propose references to see them here.
+          </Typography>
+        ) : (
+          <Box>
+            {Object.entries(changesByItem).map(([checklistItemId, changes]) => {
+              const item = getChecklistItem(checklistItemId);
+              if (!item) return null;
+              
+              return (
+                <Paper key={checklistItemId} sx={{ mb: 3, overflow: 'hidden' }}>
+                  <Box sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', px: 2, py: 1 }}>
+                    <Typography variant="subtitle1">
+                      {item.category} - {item.question}
+                    </Typography>
+                  </Box>
+                  
+                  <Box sx={{ p: 2 }}>
+                    <Typography variant="body2" sx={{ mb: 1 }}>
+                      {item.description}
+                    </Typography>
+                    
+                    <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>
+                      Proposed References:
+                    </Typography>
+                    
+                    <List dense>
+                      {changes.map((change) => (
+                        <ListItem
+                          key={change.change_id}
+                          secondaryAction={
+                            onDeleteChange && (
+                              <Tooltip title="Delete this proposed reference">
+                                <IconButton
+                                  edge="end"
+                                  aria-label="delete"
+                                  onClick={() => handleDeleteClick(change.change_id)}
+                                  disabled={isDeletingChange}
+                                >
+                                  <DeleteIcon />
+                                </IconButton>
+                              </Tooltip>
+                            )
+                          }
+                        >
+                          <ListItemText
+                            primary={
+                              <Link
+                                href={change.source_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                sx={{ wordBreak: 'break-all' }}
+                              >
+                                {change.source_url}
+                              </Link>
+                            }
+                            secondary={`Added: ${new Date(change.created_at).toLocaleString()}`}
+                          />
+                        </ListItem>
+                      ))}
+                    </List>
+                  </Box>
+                </Paper>
+              );
+            })}
+          </Box>
+        )}
+      </Box>
+
+      {/* Confirmation Dialog for PR Creation */}
       <Dialog open={confirmDialogOpen} onClose={() => setConfirmDialogOpen(false)}>
-        <DialogTitle>Create GitHub Pull Request</DialogTitle>
+        <DialogTitle>Create Pull Request</DialogTitle>
         <DialogContent>
           <Typography>
-            You are about to create a GitHub Pull Request with {pendingChanges.length} reference changes.
-            This action will submit your changes to the Cyfrin/audit-checklist repository.
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            Note: You need proper GitHub permissions for this action to succeed.
+            This will create a pull request to update the checklist with all pending changes.
+            Are you sure you want to continue?
           </Typography>
         </DialogContent>
         <DialogActions>
@@ -233,13 +235,14 @@ const PendingChanges: React.FC<PendingChangesProps> = ({
           </Button>
         </DialogActions>
       </Dialog>
-      
-      {/* Confirmation Dialog for Delete */}
+
+      {/* Confirmation Dialog for Deletion */}
       <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
         <DialogTitle>Delete Pending Change</DialogTitle>
         <DialogContent>
           <Typography>
-            Are you sure you want to delete this pending change? This action cannot be undone.
+            Are you sure you want to delete this pending change?
+            This action cannot be undone.
           </Typography>
         </DialogContent>
         <DialogActions>

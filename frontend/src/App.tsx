@@ -11,7 +11,9 @@ import {
   Alert,
   CircularProgress,
   Backdrop,
-  IconButton
+  IconButton,
+  Grid,
+  Tooltip
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { useQuery, useMutation, QueryClient, QueryClientProvider } from 'react-query';
@@ -58,6 +60,8 @@ export interface MatchResult {
   matches: ChecklistItem[];
   input_text: string;
   input_url?: string;
+  preprocessed_text?: string;
+  preprocessing_applied?: boolean;
 }
 
 // Error handling wrapper for API calls
@@ -357,6 +361,74 @@ function AppContent() {
   // Loading state
   const isLoading = isLoadingChecklist || isLoadingPendingChanges;
 
+  // Main content based on active tab
+  const renderContent = () => {
+    if (activeTab === 'matcher') {
+      return (
+        <Grid container spacing={3} sx={{ height: 'calc(100vh - 150px)' }}>
+          {/* Input Panel - Left Side */}
+          <Grid item xs={12} md={6} sx={{ height: '100%' }}>
+            <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
+              <TextInputPanel
+                inputText={inputText}
+                setInputText={setInputText}
+                inputUrl={inputUrl}
+                setInputUrl={setInputUrl}
+                onMatch={handleMatch}
+                isLoading={matchMutation.isLoading}
+              />
+            </Paper>
+          </Grid>
+
+          {/* Match Results - Right Side */}
+          <Grid item xs={12} md={6} sx={{ height: '100%' }}>
+            <Paper sx={{ p: 3, height: '100%', overflow: 'auto' }}>
+              {matchResults && (
+                <MatchResults
+                  results={matchResults}
+                  selectedItems={selectedItems}
+                  onItemSelect={handleItemSelect}
+                  onProposeReference={handleProposeReference}
+                  canProposeReference={selectedItems.length > 0 && !!inputUrl}
+                  isProposing={proposeReferenceMutation.isLoading}
+                />
+              )}
+              {!matchResults && (
+                <Box sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '100%',
+                  color: 'text.secondary'
+                }}>
+                  <Typography variant="h6">No Results Yet</Typography>
+                  <Typography variant="body1">
+                    Enter text in the input panel and click "Match with Checklist" to see results here.
+                  </Typography>
+                </Box>
+              )}
+            </Paper>
+          </Grid>
+        </Grid>
+      );
+    } else {
+      return (
+        <Paper sx={{ p: 3, height: 'calc(100vh - 150px)' }}>
+          <PendingChanges
+            pendingChanges={pendingChanges || []}
+            checklist={checklist || []}
+            onCreatePr={handleCreatePr}
+            isCreatingPr={createPrMutation.isLoading}
+            prResult={prResult}
+            onDeleteChange={handleDeletePendingChange}
+            isDeletingChange={deletePendingChangeMutation.isLoading}
+          />
+        </Paper>
+      );
+    }
+  };
+
   return (
     <Box sx={{ flexGrow: 1 }}>
       <AppBar position="static">
@@ -404,73 +476,33 @@ function AppContent() {
               </Box>
             )}
           </Button>
-          <IconButton
-            color="inherit"
-            onClick={handleResync}
-            disabled={resyncMutation.isLoading}
-            sx={{ ml: 1 }}
-          >
-            {resyncMutation.isLoading ? (
-              <CircularProgress size={24} color="inherit" />
-            ) : (
-              <RefreshIcon />
-            )}
-          </IconButton>
+          <Tooltip title="Refresh checklist from GitHub">
+            <IconButton
+              color="inherit"
+              onClick={handleResync}
+              disabled={resyncMutation.isLoading}
+            >
+              {resyncMutation.isLoading ? (
+                <CircularProgress size={24} color="inherit" />
+              ) : (
+                <RefreshIcon />
+              )}
+            </IconButton>
+          </Tooltip>
         </Toolbar>
       </AppBar>
 
-      <Container maxWidth="lg" sx={{ mt: 4 }}>
+      <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
         {isLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-            <CircularProgress />
-          </Box>
+          <Backdrop open={true} sx={{ color: '#fff', zIndex: (theme) => theme.zIndex.drawer + 1 }}>
+            <CircularProgress color="inherit" />
+          </Backdrop>
         ) : isChecklistError || isPendingChangesError ? (
           <Alert severity="error" sx={{ mb: 2 }}>
-            Failed to load data from the server. Please check your connection and try again.
-            <Button onClick={() => window.location.reload()} sx={{ ml: 2 }}>
-              Reload Page
-            </Button>
+            Failed to load data. Please refresh the page or try again later.
           </Alert>
         ) : (
-          activeTab === 'matcher' ? (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <Paper sx={{ p: 2 }}>
-                <TextInputPanel
-                  inputText={inputText}
-                  setInputText={setInputText}
-                  inputUrl={inputUrl}
-                  setInputUrl={setInputUrl}
-                  onMatch={handleMatch}
-                  isLoading={matchMutation.isLoading}
-                />
-              </Paper>
-
-              {matchResults && (
-                <Paper sx={{ p: 2 }}>
-                  <MatchResults
-                    results={matchResults}
-                    selectedItems={selectedItems}
-                    onItemSelect={handleItemSelect}
-                    onProposeReference={handleProposeReference}
-                    canProposeReference={!!inputUrl && selectedItems.length > 0}
-                    isProposing={proposeReferenceMutation.isLoading}
-                  />
-                </Paper>
-              )}
-            </Box>
-          ) : (
-            <Paper sx={{ p: 2 }}>
-              <PendingChanges
-                pendingChanges={pendingChanges || []}
-                checklist={checklist || []}
-                onCreatePr={handleCreatePr}
-                isCreatingPr={createPrMutation.isLoading}
-                prResult={prResult}
-                onDeleteChange={handleDeletePendingChange}
-                isDeletingChange={deletePendingChangeMutation.isLoading}
-              />
-            </Paper>
-          )
+          renderContent()
         )}
       </Container>
 
