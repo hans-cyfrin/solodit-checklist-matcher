@@ -55,34 +55,40 @@ const MatchResults: React.FC<MatchResultsProps> = ({
   const categories = Array.from(new Set(results.matches.map(item => item.category)));
 
   // Filter and sort matches
-  const filteredMatches = results.matches
-    .filter(item => {
-      // Apply category filter
-      if (filterCategory && item.category !== filterCategory) {
-        return false;
-      }
-      
-      // Apply search term filter
-      if (searchTerm) {
-        const searchLower = searchTerm.toLowerCase();
-        return (
-          item.id.toLowerCase().includes(searchLower) ||
+  const filteredMatches = React.useMemo(() => {
+    if (!results || !results.matches) return [];
+    
+    let filtered = [...results.matches];
+    
+    // Apply category filter
+    if (filterCategory && filterCategory !== 'All') {
+      filtered = filtered.filter(item => item.category === filterCategory);
+    }
+    
+    // Apply search filter
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(
+        item => 
           item.question.toLowerCase().includes(searchLower) ||
           item.description.toLowerCase().includes(searchLower) ||
           item.category.toLowerCase().includes(searchLower)
-        );
-      }
-      
-      return true;
-    })
-    .sort((a, b) => {
-      // Sort by selected criteria
+      );
+    }
+    
+    // Sort results
+    filtered.sort((a, b) => {
       if (sortBy === 'score') {
-        return (b.score || 0) - (a.score || 0);
+        // Sort by score (descending)
+        return ((b.score || 0) - (a.score || 0));
       } else {
+        // Sort by ID (ascending)
         return a.id.localeCompare(b.id);
       }
     });
+    
+    return filtered;
+  }, [results, searchTerm, filterCategory, sortBy]);
 
   return (
     <Box>

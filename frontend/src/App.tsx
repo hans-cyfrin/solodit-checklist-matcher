@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { 
-  Container, 
-  Box, 
-  Typography, 
-  Paper, 
-  AppBar, 
-  Toolbar, 
-  Button, 
+import {
+  Container,
+  Box,
+  Typography,
+  Paper,
+  AppBar,
+  Toolbar,
+  Button,
   Snackbar,
   Alert,
   CircularProgress,
@@ -60,6 +60,20 @@ export interface MatchResult {
   input_url?: string;
 }
 
+// Error handling wrapper for API calls
+const safeApiCall = async (apiCall: () => Promise<any>) => {
+  try {
+    return await apiCall();
+  } catch (error) {
+    console.error('API call error:', error);
+    // Safely handle the error without accessing properties that might not exist
+    if (error && typeof error === 'object') {
+      return { error: true, message: error.toString() };
+    }
+    return { error: true, message: 'An unknown error occurred' };
+  }
+};
+
 // Main App component
 function AppContent() {
   // State
@@ -77,6 +91,7 @@ function AppContent() {
     message: '',
     severity: 'info',
   });
+  const [prResult, setPrResult] = useState<any>(null);
 
   // Close notification
   const handleCloseNotification = () => {
@@ -93,58 +108,93 @@ function AppContent() {
   };
 
   // Fetch checklist
-  const { 
-    data: checklist, 
+  const {
+    data: checklist,
     isLoading: isLoadingChecklist,
     isError: isChecklistError,
     refetch: refetchChecklist
   } = useQuery<ChecklistItem[]>('checklist', async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/checklist`);
-      return response.data;
+      const response = await safeApiCall(() => axios.get(`${API_BASE_URL}/checklist`));
+
+      // Check if the response contains an error
+      if (response && response.error) {
+        showNotification('Failed to load checklist. Please try again later.', 'error');
+        return [];
+      }
+
+      // Ensure response.data exists and has the expected structure
+      if (response && response.data && Array.isArray(response.data)) {
+        return response.data;
+      } else {
+        showNotification('Received invalid checklist data from server.', 'error');
+        return [];
+      }
     } catch (error) {
       console.error('Error fetching checklist:', error);
-      showNotification('Failed to load checklist items. Please try again later.', 'error');
-      throw error;
+      showNotification('Failed to load checklist. Please try again later.', 'error');
+      return [];
     }
   });
 
   // Fetch pending changes
-  const { 
-    data: pendingChanges, 
+  const {
+    data: pendingChanges,
     isLoading: isLoadingPendingChanges,
     isError: isPendingChangesError,
-    refetch: refetchPendingChanges 
-  } = useQuery<PendingChange[]>(
-    'pendingChanges',
-    async () => {
-      try {
-        const response = await axios.get(`${API_BASE_URL}/pending-changes`);
-        return response.data;
-      } catch (error) {
-        console.error('Error fetching pending changes:', error);
+    refetch: refetchPendingChanges
+  } = useQuery<PendingChange[]>('pendingChanges', async () => {
+    try {
+      const response = await safeApiCall(() => axios.get(`${API_BASE_URL}/pending-changes`));
+
+      // Check if the response contains an error
+      if (response && response.error) {
         showNotification('Failed to load pending changes. Please try again later.', 'error');
-        throw error;
+        return [];
       }
+
+      // Ensure response.data exists and has the expected structure
+      if (response && response.data && Array.isArray(response.data)) {
+        return response.data;
+      } else {
+        showNotification('Received invalid pending changes data from server.', 'error');
+        return [];
+      }
+    } catch (error) {
+      console.error('Error fetching pending changes:', error);
+      showNotification('Failed to load pending changes. Please try again later.', 'error');
+      return [];
     }
-  );
+  });
 
   // Match text mutation
   const matchMutation = useMutation(async () => {
     try {
-      const response = await axios.post(`${API_BASE_URL}/match`, {
+      const response = await safeApiCall(() => axios.post(`${API_BASE_URL}/match`, {
         text: inputText,
         url: inputUrl || undefined,
-      });
-      setMatchResults(response.data);
-      
-      if (response.data.matches.length === 0) {
-        showNotification('No matching checklist items found. Try a different description.', 'info');
-      } else {
-        showNotification(`Found ${response.data.matches.length} matching checklist items.`, 'success');
+      }));
+
+      // Check if the response contains an error
+      if (response && response.error) {
+        showNotification('Failed to match text. Please try again later.', 'error');
+        return;
       }
-      
-      return response.data;
+
+      // Ensure response.data exists and has the expected structure
+      if (response && response.data) {
+        setMatchResults(response.data);
+
+        if (response.data.matches && response.data.matches.length === 0) {
+          showNotification('No matching checklist items found. Try a different description.', 'info');
+        } else if (response.data.matches) {
+          showNotification(`Found ${response.data.matches.length} matching checklist items.`, 'success');
+        }
+      } else {
+        showNotification('Received invalid response from server.', 'error');
+      }
+
+      return response;
     } catch (error) {
       console.error('Error matching text:', error);
       showNotification('Failed to match text. Please try again later.', 'error');
@@ -153,46 +203,59 @@ function AppContent() {
   });
 
   // Propose reference mutation
-  const proposeReferenceMutation = useMutation(
-    async () => {
-      try {
-        const changes = selectedItems.map((itemId) => ({
-          checklist_item_id: itemId,
-          source_url: inputUrl,
-        }));
-        const response = await axios.post(`${API_BASE_URL}/propose-reference`, changes);
-        showNotification(`Successfully proposed ${changes.length} reference updates.`, 'success');
-        return response.data;
-      } catch (error) {
-        console.error('Error proposing reference:', error);
-        showNotification('Failed to propose reference updates. Please try again later.', 'error');
-        throw error;
+  const proposeReferenceMutation = useMutation(async () => {
+    try {
+      const changes = selectedItems.map(itemId => ({
+        checklist_item_id: itemId,
+        source_url: inputUrl
+      }));
+
+      const response = await safeApiCall(() => axios.post(`${API_BASE_URL}/propose-reference`, changes));
+
+      // Check if the response contains an error
+      if (response && response.error) {
+        showNotification('Failed to propose reference. Please try again later.', 'error');
+        return;
       }
-    },
-    {
-      onSuccess: () => {
-        refetchPendingChanges();
-        setSelectedItems([]);
-        setActiveTab('pending');
-      },
+
+      showNotification('Reference proposed successfully!', 'success');
+      setSelectedItems([]);
+
+      return response;
+    } catch (error) {
+      console.error('Error proposing reference:', error);
+      showNotification('Failed to propose reference. Please try again later.', 'error');
+      throw error;
     }
-  );
+  }, {
+    onSuccess: () => {
+      refetchPendingChanges();
+    }
+  });
 
   // Create PR mutation
   const createPrMutation = useMutation(async () => {
     try {
-      const response = await axios.post(`${API_BASE_URL}/create-pr`);
-      
-      if (response.data.pr_number) {
-        showNotification(`Successfully created PR #${response.data.pr_number}.`, 'success');
-      } else {
-        showNotification('All changes were already applied. No new PR was created.', 'info');
+      const response = await safeApiCall(() => axios.post(`${API_BASE_URL}/create-pr`));
+
+      // Check if the response contains an error
+      if (response && response.error) {
+        showNotification('Failed to create PR. Please try again later.', 'error');
+        return;
       }
-      
-      return response.data;
+
+      // Ensure response.data exists and has the expected structure
+      if (response && response.data) {
+        setPrResult(response.data);
+        showNotification(`PR #${response.data.pr_number} created successfully!`, 'success');
+      } else {
+        showNotification('Received invalid response from server.', 'error');
+      }
+
+      return response;
     } catch (error) {
       console.error('Error creating PR:', error);
-      showNotification('Failed to create PR. Please check your GitHub permissions.', 'error');
+      showNotification('Failed to create PR. Please try again later.', 'error');
       throw error;
     }
   }, {
@@ -205,9 +268,16 @@ function AppContent() {
   const deletePendingChangeMutation = useMutation(
     async (changeId: number) => {
       try {
-        const response = await axios.delete(`${API_BASE_URL}/pending-changes/${changeId}`);
+        const response = await safeApiCall(() => axios.delete(`${API_BASE_URL}/pending-changes/${changeId}`));
+
+        // Check if the response contains an error
+        if (response && response.error) {
+          showNotification('Failed to delete pending change. Please try again.', 'error');
+          return;
+        }
+
         showNotification('Pending change deleted successfully.', 'success');
-        return response.data;
+        return response;
       } catch (error) {
         console.error('Error deleting pending change:', error);
         showNotification('Failed to delete pending change. Please try again.', 'error');
@@ -224,16 +294,23 @@ function AppContent() {
   // Resync checklist mutation
   const resyncMutation = useMutation(async () => {
     try {
-      const response = await axios.post(`${API_BASE_URL}/resync`);
+      const response = await safeApiCall(() => axios.post(`${API_BASE_URL}/resync`));
+
+      // Check if the response contains an error
+      if (response && response.error) {
+        showNotification('Failed to resync checklist. Please try again later.', 'error');
+        return;
+      }
+
       showNotification('Checklist resync started. This may take a moment.', 'info');
-      
+
       // Wait a bit and then refetch the checklist
       setTimeout(() => {
         refetchChecklist();
         showNotification('Checklist has been refreshed.', 'success');
       }, 3000);
-      
-      return response.data;
+
+      return response;
     } catch (error) {
       console.error('Error resyncing checklist:', error);
       showNotification('Failed to resync checklist. Please try again later.', 'error');
@@ -287,10 +364,10 @@ function AppContent() {
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
             Solodit Checklist Matcher
           </Typography>
-          <Button 
-            color="inherit" 
+          <Button
+            color="inherit"
             onClick={() => setActiveTab('matcher')}
-            sx={{ 
+            sx={{
               borderBottom: activeTab === 'matcher' ? '2px solid white' : 'none',
               borderRadius: 0,
               mx: 1
@@ -298,10 +375,10 @@ function AppContent() {
           >
             Matcher
           </Button>
-          <Button 
-            color="inherit" 
+          <Button
+            color="inherit"
             onClick={() => setActiveTab('pending')}
-            sx={{ 
+            sx={{
               borderBottom: activeTab === 'pending' ? '2px solid white' : 'none',
               borderRadius: 0,
               mx: 1
@@ -327,8 +404,8 @@ function AppContent() {
               </Box>
             )}
           </Button>
-          <IconButton 
-            color="inherit" 
+          <IconButton
+            color="inherit"
             onClick={handleResync}
             disabled={resyncMutation.isLoading}
             sx={{ ml: 1 }}
@@ -388,7 +465,7 @@ function AppContent() {
                 checklist={checklist || []}
                 onCreatePr={handleCreatePr}
                 isCreatingPr={createPrMutation.isLoading}
-                prResult={createPrMutation.data}
+                prResult={prResult}
                 onDeleteChange={handleDeletePendingChange}
                 isDeletingChange={deletePendingChangeMutation.isLoading}
               />

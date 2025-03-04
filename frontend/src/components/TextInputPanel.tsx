@@ -36,7 +36,7 @@ const TextInputPanel: React.FC<TextInputPanelProps> = ({
   const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const url = e.target.value;
     setInputUrl(url);
-    
+
     // Clear error when input is cleared
     if (!url) {
       setUrlError(null);
@@ -63,28 +63,35 @@ const TextInputPanel: React.FC<TextInputPanelProps> = ({
       // In a real app, this would be a backend call to fetch and parse content
       // For now, we'll simulate it with a delay
       const response = await axios.get(`https://api.allorigins.win/get?url=${encodeURIComponent(inputUrl)}`);
-      
-      if (response.data && response.data.contents) {
-        // Extract text content from HTML (simplified)
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(response.data.contents, 'text/html');
-        
-        // Get text from body, removing script and style elements
-        const scripts = doc.querySelectorAll('script, style');
-        scripts.forEach(script => script.remove());
-        
-        // Get text content
-        let content = doc.body.textContent || '';
-        
-        // Clean up whitespace
-        content = content.replace(/\s+/g, ' ').trim();
-        
-        // Limit length
-        if (content.length > 1000) {
-          content = content.substring(0, 1000) + '...';
+
+      if (response && response.data && response.data.contents) {
+        try {
+          // Extract text content from HTML (simplified)
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(response.data.contents, 'text/html');
+
+          // Get text from body, removing script and style elements
+          const scripts = doc.querySelectorAll('script, style');
+          scripts.forEach(script => script.remove());
+
+          // Get text content
+          let content = doc.body ? (doc.body.textContent || '') : '';
+
+          // Clean up whitespace
+          content = content.replace(/\s+/g, ' ').trim();
+
+          // Limit length
+          if (content.length > 1000) {
+            content = content.substring(0, 1000) + '...';
+          }
+
+          setInputText(content);
+        } catch (parseError) {
+          console.error('Error parsing HTML:', parseError);
+          setUrlError('Failed to parse content from URL');
         }
-        
-        setInputText(content);
+      } else {
+        setUrlError('Failed to load content from URL');
       }
     } catch (error) {
       console.error('Error loading URL:', error);

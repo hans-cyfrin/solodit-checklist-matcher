@@ -54,7 +54,8 @@ const PendingChanges: React.FC<PendingChangesProps> = ({
 
   // Get checklist item by ID
   const getChecklistItem = (id: string) => {
-    return checklist.find((item) => item.id === id);
+    if (!checklist || !Array.isArray(checklist)) return null;
+    return checklist.find(item => item.id === id) || null;
   };
 
   // Filter pending changes based on search term
@@ -65,25 +66,29 @@ const PendingChanges: React.FC<PendingChangesProps> = ({
     const item = getChecklistItem(change.checklist_item_id);
     
     return (
-      change.checklist_item_id.toLowerCase().includes(searchLower) ||
-      change.source_url.toLowerCase().includes(searchLower) ||
-      (item && item.category.toLowerCase().includes(searchLower)) ||
-      (item && item.question.toLowerCase().includes(searchLower))
+      (item && (
+        item.question.toLowerCase().includes(searchLower) ||
+        item.description.toLowerCase().includes(searchLower) ||
+        item.category.toLowerCase().includes(searchLower)
+      )) ||
+      change.source_url.toLowerCase().includes(searchLower)
     );
   });
 
-  // Group changes by category
-  const changesByCategory: Record<string, PendingChange[]> = {};
-  filteredChanges.forEach(change => {
-    const item = getChecklistItem(change.checklist_item_id);
-    const category = item ? item.category : 'Uncategorized';
-    
-    if (!changesByCategory[category]) {
-      changesByCategory[category] = [];
-    }
-    
-    changesByCategory[category].push(change);
-  });
+  // Group changes by checklist item
+  const changesByItem: Record<string, PendingChange[]> = {};
+  
+  if (filteredChanges && Array.isArray(filteredChanges)) {
+    filteredChanges.forEach(change => {
+      if (!change || !change.checklist_item_id) return;
+      
+      if (!changesByItem[change.checklist_item_id]) {
+        changesByItem[change.checklist_item_id] = [];
+      }
+      
+      changesByItem[change.checklist_item_id].push(change);
+    });
+  }
 
   // Handle PR confirmation
   const handleConfirmPR = () => {
@@ -140,99 +145,73 @@ const PendingChanges: React.FC<PendingChangesProps> = ({
         </Alert>
       )}
 
-      {pendingChanges.length === 0 ? (
-        <Paper sx={{ p: 3, textAlign: 'center' }}>
-          <Typography variant="body1" color="text.secondary">
-            No pending changes. Match some text and propose references to see them here.
-          </Typography>
-        </Paper>
+      {pendingChanges && pendingChanges.length === 0 ? (
+        <Typography variant="body1" sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>
+          No pending changes. Match some text and propose references to see them here.
+        </Typography>
       ) : (
-        <>
-          <TextField
-            fullWidth
-            label="Search pending changes"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            margin="normal"
-            size="small"
-            sx={{ mb: 2 }}
-          />
-          
-          {filteredChanges.length === 0 ? (
-            <Typography variant="body1" color="text.secondary" sx={{ textAlign: 'center', mt: 2 }}>
-              No changes match your search criteria.
-            </Typography>
-          ) : (
-            Object.entries(changesByCategory).map(([category, changes]) => (
-              <Paper key={category} sx={{ mb: 3, overflow: 'hidden' }}>
+        <Box>
+          {Object.entries(changesByItem).map(([checklistItemId, changes]) => {
+            const item = getChecklistItem(checklistItemId);
+            if (!item) return null;
+            
+            return (
+              <Paper key={checklistItemId} sx={{ mb: 3, overflow: 'hidden' }}>
                 <Box sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', px: 2, py: 1 }}>
-                  <Typography variant="subtitle1">{category}</Typography>
+                  <Typography variant="subtitle1">
+                    {item.category} - {item.question}
+                  </Typography>
                 </Box>
-                <List>
-                  {changes.map((change) => {
-                    const item = getChecklistItem(change.checklist_item_id);
-                    return (
-                      <React.Fragment key={change.change_id}>
-                        <ListItem 
-                          alignItems="flex-start" 
-                          sx={{ '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.04)' } }}
-                          secondaryAction={
-                            onDeleteChange && (
-                              <Tooltip title="Delete this pending change">
-                                <IconButton 
-                                  edge="end" 
-                                  aria-label="delete" 
-                                  onClick={() => handleDeleteClick(change.change_id)}
-                                  disabled={isDeletingChange}
-                                >
-                                  <DeleteIcon />
-                                </IconButton>
-                              </Tooltip>
-                            )
+                
+                <Box sx={{ p: 2 }}>
+                  <Typography variant="body2" sx={{ mb: 1 }}>
+                    {item.description}
+                  </Typography>
+                  
+                  <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>
+                    Proposed References:
+                  </Typography>
+                  
+                  <List dense>
+                    {changes.map((change) => (
+                      <ListItem
+                        key={change.change_id}
+                        secondaryAction={
+                          onDeleteChange && (
+                            <Tooltip title="Delete this proposed reference">
+                              <IconButton
+                                edge="end"
+                                aria-label="delete"
+                                onClick={() => handleDeleteClick(change.change_id)}
+                                disabled={isDeletingChange}
+                              >
+                                <DeleteIcon />
+                              </IconButton>
+                            </Tooltip>
+                          )
+                        }
+                      >
+                        <ListItemText
+                          primary={
+                            <Link
+                              href={change.source_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              sx={{ wordBreak: 'break-all' }}
+                            >
+                              {change.source_url}
+                            </Link>
                           }
-                        >
-                          <ListItemText
-                            primary={
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography variant="subtitle1" fontWeight="bold">
-                                  {change.checklist_item_id}
-                                </Typography>
-                                <Chip 
-                                  label={change.status} 
-                                  size="small" 
-                                  color={change.status === 'pending' ? 'warning' : 'success'} 
-                                />
-                              </Box>
-                            }
-                            secondary={
-                              <Box sx={{ mt: 1 }}>
-                                {item && (
-                                  <Typography variant="body2" gutterBottom>
-                                    {item.question}
-                                  </Typography>
-                                )}
-                                <Typography variant="body2" gutterBottom>
-                                  <strong>Source URL:</strong>{' '}
-                                  <Link href={change.source_url} target="_blank" rel="noopener noreferrer">
-                                    {change.source_url}
-                                  </Link>
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                  Added on {new Date(change.created_at).toLocaleString()}
-                                </Typography>
-                              </Box>
-                            }
-                          />
-                        </ListItem>
-                        <Divider />
-                      </React.Fragment>
-                    );
-                  })}
-                </List>
+                          secondary={`Added: ${new Date(change.created_at).toLocaleString()}`}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                </Box>
               </Paper>
-            ))
-          )}
-        </>
+            );
+          })}
+        </Box>
       )}
 
       {/* Confirmation Dialog for PR */}
