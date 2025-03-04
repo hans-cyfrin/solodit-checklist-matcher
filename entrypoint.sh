@@ -4,6 +4,16 @@
 echo "DEBUG: All environment variables:"
 env | sort
 
+# In Railway, use the internal DATABASE_URL
+if [ "$RAILWAY_ENVIRONMENT" = "production" ]; then
+    if [ -n "$DATABASE_URL" ]; then
+        echo "Using Railway internal DATABASE_URL"
+    else
+        echo "WARNING: Internal DATABASE_URL not found, falling back to public URL"
+        export DATABASE_URL="$DATABASE_PUBLIC_URL"
+    fi
+fi
+
 echo "DEBUG: DATABASE_URL=$DATABASE_URL"
 
 # Parse DATABASE_URL
@@ -23,7 +33,7 @@ if [ -n "$DATABASE_URL" ]; then
     echo "PGUSER=$PGUSER"
     echo "PGDATABASE=$PGDATABASE"
 else
-    echo "ERROR: DATABASE_URL is not set!"
+    echo "ERROR: No DATABASE_URL found in environment variables!"
     exit 1
 fi
 

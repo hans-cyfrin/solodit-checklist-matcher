@@ -12,20 +12,29 @@ import sys
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
+# Load environment variables only in development
+if os.getenv('RAILWAY_ENVIRONMENT') != 'production':
+    load_dotenv()
 
 # Get database URL from environment
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+# In Railway, use the internal DATABASE_URL or fall back to public URL
+if os.getenv('RAILWAY_ENVIRONMENT') == 'production':
+    if not DATABASE_URL:
+        logger.warning("Internal DATABASE_URL not found, falling back to public URL")
+        DATABASE_URL = os.getenv("DATABASE_PUBLIC_URL")
+
 # Validate DATABASE_URL
 if not DATABASE_URL:
-    logger.error("DATABASE_URL environment variable is not set!")
+    logger.error("No DATABASE_URL found in environment variables!")
     sys.exit(1)
 
 logger.info("Database configuration:")
+logger.info(f"Environment: {os.getenv('RAILWAY_ENVIRONMENT', 'development')}")
 logger.info(f"DATABASE_URL format check: starts with postgresql:// = {DATABASE_URL.startswith('postgresql://')}")
-logger.info(f"Full DATABASE_URL: {DATABASE_URL}")
+logger.info(f"Using internal Railway connection: {'.railway.internal' in DATABASE_URL}")
+logger.info(f"Database host: {DATABASE_URL.split('@')[1].split('/')[0]}")
 
 # Create SQLAlchemy engine with a longer timeout
 engine = create_engine(
