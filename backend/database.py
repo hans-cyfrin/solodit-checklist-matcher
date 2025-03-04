@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import OperationalError
 from dotenv import load_dotenv
 import logging
+import sys
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -16,12 +17,21 @@ load_dotenv()
 
 # Get database URL from environment
 DATABASE_URL = os.getenv("DATABASE_URL")
-logger.info(f"Connecting to database with URL: {DATABASE_URL}")
+
+# Validate DATABASE_URL
+if not DATABASE_URL:
+    logger.error("DATABASE_URL environment variable is not set!")
+    sys.exit(1)
+
+logger.info("Database configuration:")
+logger.info(f"DATABASE_URL format check: starts with postgresql:// = {DATABASE_URL.startswith('postgresql://')}")
+logger.info(f"Full DATABASE_URL: {DATABASE_URL}")
 
 # Create SQLAlchemy engine with a longer timeout
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"connect_timeout": 30}  # Increased timeout
+    connect_args={"connect_timeout": 30},  # Increased timeout
+    echo=True  # Enable SQL query logging
 )
 
 # Create session factory

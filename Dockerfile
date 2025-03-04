@@ -24,4 +24,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 8000
 
 # Set entrypoint
-ENTRYPOINT ["/app/entrypoint.sh"] 
+ENTRYPOINT ["/app/entrypoint.sh"]

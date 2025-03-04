@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Debug: Print all environment variables
+echo "DEBUG: All environment variables:"
+env | sort
+
+echo "DEBUG: DATABASE_URL=$DATABASE_URL"
+
 # Parse DATABASE_URL
 if [ -n "$DATABASE_URL" ]; then
     # Extract connection details from DATABASE_URL
@@ -10,6 +16,15 @@ if [ -n "$DATABASE_URL" ]; then
     PGDATABASE=$(echo $DATABASE_URL | awk -F/ '{print $NF}')
 
     export PGUSER PGPASSWORD PGHOST PGPORT PGDATABASE
+
+    echo "DEBUG: Parsed database connection details:"
+    echo "PGHOST=$PGHOST"
+    echo "PGPORT=$PGPORT"
+    echo "PGUSER=$PGUSER"
+    echo "PGDATABASE=$PGDATABASE"
+else
+    echo "ERROR: DATABASE_URL is not set!"
+    exit 1
 fi
 
 # Wait for PostgreSQL to be ready
