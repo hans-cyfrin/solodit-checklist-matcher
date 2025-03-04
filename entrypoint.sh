@@ -4,17 +4,30 @@
 echo "DEBUG: All environment variables:"
 env | sort
 
-# In Railway, use the internal DATABASE_URL
+echo "DEBUG: Current DATABASE_URL=$DATABASE_URL"
+
+# In Railway, ensure we're using the correct database URL
 if [ "$RAILWAY_ENVIRONMENT" = "production" ]; then
-    if [ -n "$DATABASE_URL" ]; then
+    if [[ "$DATABASE_URL" == *"postgres.railway.internal"* ]]; then
         echo "Using Railway internal DATABASE_URL"
-    else
-        echo "WARNING: Internal DATABASE_URL not found, falling back to public URL"
+    elif [[ "$DATABASE_URL" == *"postgres:admin@postgres"* ]]; then
+        echo "ERROR: Found local development DATABASE_URL in production!"
+        echo "Please remove the DATABASE_URL variable from Railway and link the PostgreSQL service's DATABASE_URL instead."
+        exit 1
+    elif [ -n "$DATABASE_PUBLIC_URL" ]; then
+        echo "WARNING: Using public DATABASE_URL as fallback"
         export DATABASE_URL="$DATABASE_PUBLIC_URL"
+    else
+        echo "ERROR: No valid PostgreSQL URL found!"
+        echo "Please make sure to:"
+        echo "1. Add a PostgreSQL service in Railway"
+        echo "2. Link the PostgreSQL service's DATABASE_URL to this application"
+        echo "3. Remove any manually added DATABASE_URL variables"
+        exit 1
     fi
 fi
 
-echo "DEBUG: DATABASE_URL=$DATABASE_URL"
+echo "DEBUG: Final DATABASE_URL=$DATABASE_URL"
 
 # Parse DATABASE_URL
 if [ -n "$DATABASE_URL" ]; then
