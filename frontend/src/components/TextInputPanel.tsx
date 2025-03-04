@@ -1,5 +1,6 @@
-import React from 'react';
-import { Box, TextField, Button, Typography, CircularProgress, Grid } from '@mui/material';
+import React, { useState } from 'react';
+import { Box, TextField, Button, Typography, CircularProgress, Grid, Alert } from '@mui/material';
+import axios from 'axios';
 
 interface TextInputPanelProps {
   inputText: string;
@@ -18,16 +19,78 @@ const TextInputPanel: React.FC<TextInputPanelProps> = ({
   onMatch,
   isLoading,
 }) => {
-  // Handle URL load (in a real app, this would fetch content from the URL)
+  const [isLoadingUrl, setIsLoadingUrl] = useState(false);
+  const [urlError, setUrlError] = useState<string | null>(null);
+
+  // Validate URL
+  const validateUrl = (url: string): boolean => {
+    try {
+      const parsedUrl = new URL(url);
+      return parsedUrl.protocol === 'https:';
+    } catch (e) {
+      return false;
+    }
+  };
+
+  // Handle URL input change
+  const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const url = e.target.value;
+    setInputUrl(url);
+    
+    // Clear error when input is cleared
+    if (!url) {
+      setUrlError(null);
+    }
+    // Only validate non-empty URLs to avoid showing errors while typing
+    else if (url.length > 8 && !validateUrl(url)) {
+      setUrlError('Please enter a valid HTTPS URL');
+    } else {
+      setUrlError(null);
+    }
+  };
+
+  // Handle URL load
   const handleLoadUrl = async () => {
-    if (!inputUrl) return;
+    if (!inputUrl || !validateUrl(inputUrl)) {
+      setUrlError('Please enter a valid HTTPS URL');
+      return;
+    }
+
+    setIsLoadingUrl(true);
+    setUrlError(null);
 
     try {
-      // This is a placeholder. In a real app, you would fetch the content from the URL
-      // and set it as the input text.
-      setInputText(`Content loaded from ${inputUrl}`);
+      // In a real app, this would be a backend call to fetch and parse content
+      // For now, we'll simulate it with a delay
+      const response = await axios.get(`https://api.allorigins.win/get?url=${encodeURIComponent(inputUrl)}`);
+      
+      if (response.data && response.data.contents) {
+        // Extract text content from HTML (simplified)
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(response.data.contents, 'text/html');
+        
+        // Get text from body, removing script and style elements
+        const scripts = doc.querySelectorAll('script, style');
+        scripts.forEach(script => script.remove());
+        
+        // Get text content
+        let content = doc.body.textContent || '';
+        
+        // Clean up whitespace
+        content = content.replace(/\s+/g, ' ').trim();
+        
+        // Limit length
+        if (content.length > 1000) {
+          content = content.substring(0, 1000) + '...';
+        }
+        
+        setInputText(content);
+      }
     } catch (error) {
       console.error('Error loading URL:', error);
+      setUrlError('Failed to load content from URL');
+    } finally {
+      setIsLoadingUrl(false);
     }
   };
 
@@ -44,17 +107,20 @@ const TextInputPanel: React.FC<TextInputPanelProps> = ({
             fullWidth
             variant="outlined"
             value={inputUrl}
-            onChange={(e) => setInputUrl(e.target.value)}
+            onChange={handleUrlChange}
             placeholder="https://example.com/audit-report"
+            error={!!urlError}
+            helperText={urlError}
             sx={{ mb: 2 }}
           />
           <Button
             variant="outlined"
             onClick={handleLoadUrl}
-            disabled={!inputUrl}
+            disabled={!inputUrl || isLoadingUrl || !!urlError}
             sx={{ mb: 2 }}
+            startIcon={isLoadingUrl ? <CircularProgress size={20} color="inherit" /> : null}
           >
-            Load Content
+            {isLoadingUrl ? 'Loading...' : 'Load Content'}
           </Button>
         </Grid>
 
