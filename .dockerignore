@@ -1,0 +1,35 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+
+# Node.js
+frontend/node_modules/
+frontend/build/
+
+# Development
+.vscode/
+.idea/
+*.log
+
+# Docker
+.docker/
+docker-compose.yml
+docker-compose.*.yml
+
+# Documentation
+README.md
+*.md
+
+# Tests
+tests/
+test_*.py 
