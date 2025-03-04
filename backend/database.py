@@ -19,11 +19,24 @@ if os.getenv('RAILWAY_ENVIRONMENT') != 'production':
 # Get database URL from environment
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# In Railway, use the internal DATABASE_URL or fall back to public URL
+# In Railway, check for various database connection options
 if os.getenv('RAILWAY_ENVIRONMENT') == 'production':
     if not DATABASE_URL:
-        logger.warning("Internal DATABASE_URL not found, falling back to public URL")
-        DATABASE_URL = os.getenv("DATABASE_PUBLIC_URL")
+        logger.warning("DATABASE_URL not found, checking alternatives...")
+        
+        # Check if we have individual PostgreSQL connection parameters
+        pg_user = os.getenv("PGUSER")
+        pg_password = os.getenv("PGPASSWORD")
+        pg_host = os.getenv("PGHOST")
+        pg_port = os.getenv("PGPORT", "5432")
+        pg_database = os.getenv("PGDATABASE")
+        
+        if pg_user and pg_password and pg_host and pg_database:
+            logger.info("Constructing DATABASE_URL from individual PG* variables")
+            DATABASE_URL = f"postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_database}"
+        elif os.getenv("DATABASE_PUBLIC_URL"):
+            logger.warning("Using DATABASE_PUBLIC_URL as fallback")
+            DATABASE_URL = os.getenv("DATABASE_PUBLIC_URL")
 
 # Validate DATABASE_URL
 if not DATABASE_URL:
@@ -34,14 +47,25 @@ logger.info("Database configuration:")
 logger.info(f"Environment: {os.getenv('RAILWAY_ENVIRONMENT', 'development')}")
 logger.info(f"DATABASE_URL format check: starts with postgresql:// = {DATABASE_URL.startswith('postgresql://')}")
 logger.info(f"Using internal Railway connection: {'.railway.internal' in DATABASE_URL}")
-logger.info(f"Database host: {DATABASE_URL.split('@')[1].split('/')[0]}")
+try:
+    db_host = DATABASE_URL.split('@')[1].split('/')[0]
+    logger.info(f"Database host: {db_host}")
+except IndexError:
+    logger.error(f"Could not parse database host from DATABASE_URL: {DATABASE_URL}")
 
 # Create SQLAlchemy engine with a longer timeout
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"connect_timeout": 30},  # Increased timeout
-    echo=True  # Enable SQL query logging
-)
+try:
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"connect_timeout": 60},  # Increased timeout
+        pool_pre_ping=True,  # Enable connection validation
+        pool_recycle=3600,   # Recycle connections after 1 hour
+        echo=True            # Enable SQL query logging
+    )
+    logger.info("Database engine created successfully")
+except Exception as e:
+    logger.error(f"Failed to create database engine: {str(e)}")
+    sys.exit(1)
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -62,9 +86,9 @@ def init_db():
     from models import Base
 
     # Try to connect to the database
-    max_retries = 5  # Increased retries
+    max_retries = 8  # Increased retries
     retry_count = 0
-    retry_delay = 5  # Increased delay
+    retry_delay = 10  # Increased delay
 
     while retry_count < max_retries:
         try:
