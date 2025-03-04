@@ -1,8 +1,21 @@
 #!/bin/bash
 
+# Parse DATABASE_URL
+if [ -n "$DATABASE_URL" ]; then
+    # Extract connection details from DATABASE_URL
+    PGUSER=$(echo $DATABASE_URL | awk -F[:/@] '{print $4}')
+    PGPASSWORD=$(echo $DATABASE_URL | awk -F[:/@] '{print $5}')
+    PGHOST=$(echo $DATABASE_URL | awk -F[:/@] '{print $6}')
+    PGPORT=$(echo $DATABASE_URL | awk -F[:/@] '{print $7}' | awk -F/ '{print $1}')
+    PGDATABASE=$(echo $DATABASE_URL | awk -F/ '{print $NF}')
+
+    export PGUSER PGPASSWORD PGHOST PGPORT PGDATABASE
+fi
+
 # Wait for PostgreSQL to be ready
 echo "Waiting for PostgreSQL..."
-until pg_isready -d "$DATABASE_URL"; do
+echo "Trying to connect to PostgreSQL at $PGHOST:$PGPORT..."
+until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER"; do
     echo "Waiting for PostgreSQL to be ready..."
     sleep 2
 done
