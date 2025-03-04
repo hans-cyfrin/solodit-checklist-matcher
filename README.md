@@ -1,5 +1,25 @@
 # Solodit Checklist Matcher
 
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/solodit-checklist-matcher)
+
+## Quick Deploy
+
+The fastest way to deploy this application is using Railway:
+
+1. Click the "Deploy on Railway" button above
+2. Connect your GitHub account
+3. Configure your environment variables
+4. Railway will automatically:
+   - Set up PostgreSQL with pgvector
+   - Deploy your backend
+   - Provide you with a live URL
+
+For the frontend, use Vercel:
+1. Go to [Vercel](https://vercel.com)
+2. Import your repository
+3. Set `REACT_APP_API_BASE_URL` to your Railway backend URL
+4. Deploy
+
 *Enhanced Tool for Security Audit Collaboration*
 
 ## Overview

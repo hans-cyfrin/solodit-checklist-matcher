@@ -5,9 +5,12 @@ services:
   postgres:
     image: ankane/pgvector:latest
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: admin
-      POSTGRES_DB: solodit_checklist
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+      POSTGRES_DB: ${POSTGRES_DB:-solodit_checklist}
+      POSTGRES_HOST_AUTH_METHOD: md5
+      POSTGRES_INITDB_ARGS: --auth-host=md5
+    command: postgres -c password_encryption=md5
     ports:
       - "5432:5432"
     volumes:
@@ -17,6 +20,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   # Backend API service
   backend:
@@ -25,16 +29,22 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://postgres:admin@postgres:5432/solodit_checklist
-      - API_HOST=0.0.0.0
-      - API_PORT=8000
-      - CORS_ORIGINS=http://localhost:3000
+      - DATABASE_URL=${DATABASE_URL}
+      - API_HOST=${API_HOST}
+      - API_PORT=${API_PORT}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_REPO_OWNER=${GITHUB_REPO_OWNER}
+      - GITHUB_REPO_NAME=${GITHUB_REPO_NAME}
+      - GITHUB_PR_BRANCH=${GITHUB_PR_BRANCH}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
     # The entrypoint script in the Dockerfile will handle database initialization
     # and starting the application
+    restart: unless-stopped
 
   # Frontend service
   frontend:
@@ -44,8 +54,11 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+    environment:
+      - REACT_APP_API_BASE_URL=${REACT_APP_API_BASE_URL:-http://localhost:8000}
     depends_on:
       - backend
+    restart: unless-stopped
 
 volumes:
   postgres_data:

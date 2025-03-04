@@ -14,5 +14,5 @@ COPY . .
 # Expose port
 EXPOSE 3000
 
-# Start the application
+# Start the application in development mode
 CMD ["npm", "start"]
