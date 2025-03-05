@@ -1,25 +1,5 @@
 # Solodit Checklist Matcher
 
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/solodit-checklist-matcher)
-
-## Quick Deploy
-
-The fastest way to deploy this application is using Railway:
-
-1. Click the "Deploy on Railway" button above
-2. Connect your GitHub account
-3. Configure your environment variables
-4. Railway will automatically:
-   - Set up PostgreSQL with pgvector
-   - Deploy your backend
-   - Provide you with a live URL
-
-For the frontend, use Vercel:
-1. Go to [Vercel](https://vercel.com)
-2. Import your repository
-3. Set `REACT_APP_API_BASE_URL` to your Railway backend URL
-4. Deploy
-
 *Enhanced Tool for Security Audit Collaboration*
 
 ## Overview
@@ -68,26 +48,32 @@ Solodit Checklist Matcher is a tool designed to help security auditors match fin
    cd solodit-checklist-matcher
    ```
 
-2. Create a `.env` file in the `backend` directory (copy from `.env.example`):
+2. Create a `.env` file in the root directory (copy from `.env.example`):
    ```bash
-   cp backend/.env.example backend/.env
+   cp .env.example .env
    ```
 
-3. Edit the `.env` file to add your GitHub token and configure database:
+3. Edit the `.env` file to add your tokens and configure the environment:
    ```
    # Database configuration
-   DATABASE_URL=postgresql://postgres:postgres@db:5432/solodit
-   
+   POSTGRES_USER=postgres
+   POSTGRES_PASSWORD=your_secure_password
+   POSTGRES_DB=solodit_checklist
+   DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+
    # GitHub configuration
    GITHUB_TOKEN=your_github_token
    GITHUB_REPO_OWNER=Cyfrin
    GITHUB_REPO_NAME=audit-checklist
    GITHUB_PR_BRANCH=solodit-matcher-updates
-   
+
    # API configuration
    API_HOST=0.0.0.0
    API_PORT=8000
    CORS_ORIGINS=http://localhost:3000
+
+   # OpenAI configuration
+   OPENAI_API_KEY=your_openai_api_key
    ```
 
 4. Start the application:
@@ -98,20 +84,20 @@ Solodit Checklist Matcher is a tool designed to help security auditors match fin
    ```
 
    **Without Docker:**
-   
+
    a. Set up PostgreSQL with pgvector:
    ```bash
    # Install pgvector extension in your PostgreSQL instance
-   # Create a database named 'solodit'
+   # Create a database named 'solodit_checklist'
    ```
-   
+
    b. Start the backend:
    ```bash
    cd backend
    pip install -r requirements.txt
    python -m uvicorn main:app --reload
    ```
-   
+
    c. Start the frontend:
    ```bash
    cd frontend
@@ -161,19 +147,6 @@ Solodit Checklist Matcher is a tool designed to help security auditors match fin
 1. Click the refresh icon in the top navigation bar
 2. The application will fetch the latest checklist from GitHub
 3. New items will be added to the database and embeddings will be generated
-
-## API Endpoints
-
-| Endpoint | Method | Description | Rate Limit |
-|----------|--------|-------------|------------|
-| `/checklist` | GET | Get all checklist items | - |
-| `/match` | POST | Match text to checklist items | 20/minute |
-| `/propose-reference` | POST | Propose new references | 10/minute |
-| `/pending-changes` | GET | Get all pending changes | - |
-| `/pending-changes/{id}` | DELETE | Delete a pending change | - |
-| `/create-pr` | POST | Create a GitHub PR | 5/hour |
-| `/resync` | POST | Resync checklist from GitHub | 2/hour |
-| `/health` | GET | Check application health | - |
 
 ## Development
 
@@ -235,3 +208,201 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [sentence-transformers](https://github.com/UKPLab/sentence-transformers) for text embeddings
 - [FastAPI](https://fastapi.tiangolo.com/) for the backend framework
 - [React](https://reactjs.org/) and [Material-UI](https://mui.com/) for the frontend
+
+## Deployment
+
+### AWS EC2 Free Tier Deployment
+
+1. Launch an EC2 Instance:
+   - Choose Amazon Linux 2023 AMI (free tier eligible)
+   - Select t2.micro instance type
+   - Configure security group to allow:
+     - SSH (port 22)
+     - HTTP (port 80)
+     - HTTPS (port 443)
+     - Custom TCP (ports 8000 for API, 3000 for frontend)
+
+2. Install System Dependencies:
+   ```bash
+   # Update system
+   sudo yum update -y
+
+   # Install development tools
+   sudo yum groupinstall "Development Tools" -y
+   
+   # Install Python 3.8+ and pip
+   sudo yum install python3 python3-pip -y
+   
+   # Install Node.js and npm
+   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+   source ~/.bashrc
+   nvm install 18
+   nvm use 18
+
+   # Install PostgreSQL 15 with pgvector
+   sudo yum install -y postgresql15 postgresql15-server
+   sudo postgresql-setup --initdb
+   ```
+
+3. Configure PostgreSQL:
+   ```bash
+   # Start PostgreSQL service
+   sudo systemctl start postgresql
+   sudo systemctl enable postgresql
+
+   # Switch to postgres user
+   sudo -i -u postgres
+
+   # Create database and user
+   createdb solodit_checklist
+   psql -c "CREATE USER solodit WITH PASSWORD 'your_secure_password';"
+   psql -c "GRANT ALL PRIVILEGES ON DATABASE solodit_checklist TO solodit;"
+
+   # Install pgvector extension
+   psql -d solodit_checklist -c 'CREATE EXTENSION vector;'
+
+   # Exit postgres user
+   exit
+   ```
+
+4. Clone and Setup Application:
+   ```bash
+   # Clone repository
+   git clone https://github.com/yourusername/solodit-checklist-matcher.git
+   cd solodit-checklist-matcher
+
+   # Create and configure .env
+   cp .env.example .env
+   
+   # Edit .env with your configuration:
+   nano .env
+   ```
+   Update the `.env` file with:
+   ```
+   # Database configuration
+   POSTGRES_USER=solodit
+   POSTGRES_PASSWORD=your_secure_password
+   POSTGRES_DB=solodit_checklist
+   DATABASE_URL=postgresql://solodit:your_secure_password@localhost:5432/solodit_checklist
+
+   # Other configurations as before...
+   ```
+
+5. Setup Backend:
+   ```bash
+   cd backend
+   pip3 install -r requirements.txt
+
+   # Start backend service (using tmux for persistence)
+   sudo yum install tmux -y
+   tmux new-session -d -s backend 'python3 -m uvicorn main:app --host 0.0.0.0 --port 8000'
+   ```
+
+6. Setup Frontend:
+   ```bash
+   cd ../frontend
+   npm install
+
+   # Build for production
+   npm run build
+
+   # Install and configure nginx
+   sudo yum install nginx -y
+   sudo nano /etc/nginx/conf.d/solodit.conf
+   ```
+   Add nginx configuration:
+   ```nginx
+   server {
+       listen 80;
+       server_name your_ec2_domain_or_ip;
+
+       # Serve frontend
+       location / {
+           root /home/ec2-user/solodit-checklist-matcher/frontend/build;
+           try_files $uri $uri/ /index.html;
+       }
+
+       # Proxy backend API requests
+       location /api/ {
+           proxy_pass http://localhost:8000/;
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection 'upgrade';
+           proxy_set_header Host $host;
+           proxy_cache_bypass $http_upgrade;
+       }
+   }
+   ```
+   ```bash
+   # Start nginx
+   sudo systemctl start nginx
+   sudo systemctl enable nginx
+   ```
+
+7. Setup Process Management (optional but recommended):
+   ```bash
+   # Install PM2 for process management
+   npm install -g pm2
+
+   # Start backend with PM2 (instead of tmux)
+   cd ../backend
+   pm2 start "python3 -m uvicorn main:app --host 0.0.0.0 --port 8000" --name solodit-backend
+
+   # Save PM2 configuration
+   pm2 save
+
+   # Setup PM2 to start on boot
+   pm2 startup
+   ```
+
+8. Setup SSL (recommended):
+   ```bash
+   # Install certbot
+   sudo yum install certbot python3-certbot-nginx -y
+
+   # Get SSL certificate
+   sudo certbot --nginx -d your_domain.com
+   ```
+
+### Maintenance Tips
+
+1. **Monitoring**:
+   ```bash
+   # Check backend logs
+   pm2 logs solodit-backend
+
+   # Check nginx logs
+   sudo tail -f /var/log/nginx/error.log
+   ```
+
+2. **Updates**:
+   ```bash
+   # Update application
+   cd ~/solodit-checklist-matcher
+   git pull
+   
+   # Update backend
+   cd backend
+   pip3 install -r requirements.txt
+   pm2 restart solodit-backend
+
+   # Update frontend
+   cd ../frontend
+   npm install
+   npm run build
+   ```
+
+3. **Backup**:
+   ```bash
+   # Backup database
+   pg_dump -U solodit solodit_checklist > backup.sql
+   ```
+
+### Security Notes
+
+1. Configure your EC2 security group carefully
+2. Use strong passwords for PostgreSQL
+3. Keep your system and dependencies updated
+4. Consider setting up automated backups
+5. Monitor system resources and logs
+6. Use SSL/TLS for production deployments

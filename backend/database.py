@@ -12,8 +12,8 @@ import sys
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv(override=True)
+# Load environment variables without overriding existing ones
+load_dotenv(override=False)
 
 # Get database URL from environment
 DATABASE_URL = os.getenv("DATABASE_URL")

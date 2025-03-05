@@ -226,6 +226,12 @@ const MatchResults: React.FC<MatchResultsProps> = ({
                         color="primary"
                         variant="outlined"
                       />
+                      <Chip
+                        label={`ID: ${item.id}`}
+                        size="small"
+                        color="default"
+                        variant="outlined"
+                      />
                       {item.score !== undefined && (
                         <Chip
                           label={`Score: ${(item.score * 100).toFixed(0)}%`}
