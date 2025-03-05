@@ -25,10 +25,37 @@ if os.getenv('RAILWAY_ENVIRONMENT') != 'production':
 TARGET_DB_NAME = 'solodit_checklist'
 
 # Get database connection parameters from environment
-DATABASE_URL = os.getenv("DATABASE_URL")
+# PRIORITY: DATABASE_PUBLIC_URL > DATABASE_URL > PG* variables
+DATABASE_URL = None
+
+# First check for PUBLIC_DB_HOST and PUBLIC_DB_PORT which are known to work
+if os.getenv("PUBLIC_DB_HOST") and os.getenv("PUBLIC_DB_PORT"):
+    pg_user = os.getenv("PGUSER")
+    pg_password = os.getenv("PGPASSWORD")
+    pg_database = os.getenv("PGDATABASE", "railway")
+    public_host = os.getenv("PUBLIC_DB_HOST")
+    public_port = os.getenv("PUBLIC_DB_PORT")
+
+    if pg_user and pg_password and public_host and public_port:
+        logger.info(f"Constructing DATABASE_URL using public connection information")
+        DATABASE_URL = f"postgresql://{pg_user}:{pg_password}@{public_host}:{public_port}/{pg_database}"
+        logger.info(f"Using public database connection")
+
+# If no public connection info, try DATABASE_PUBLIC_URL
+if not DATABASE_URL and os.getenv("DATABASE_PUBLIC_URL"):
+    logger.info("Using DATABASE_PUBLIC_URL as it's known to work")
+    DATABASE_URL = os.getenv("DATABASE_PUBLIC_URL")
+
+# Next, try the original DATABASE_URL
+if not DATABASE_URL and os.getenv("DATABASE_URL"):
+    DATABASE_URL = os.getenv("DATABASE_URL")
+    # If we're in Railway and it's an internal URL, warn about potential issues
+    if os.getenv('RAILWAY_ENVIRONMENT') == 'production' and "railway.internal" in DATABASE_URL:
+        logger.warning("Using Railway internal DATABASE_URL which may have connectivity issues")
+
+# Last resort: Construct from PG* variables
 if not DATABASE_URL:
-    logger.error("No DATABASE_URL found in environment variables!")
-    # Check for individual connection parameters
+    logger.info("Falling back to individual PG* variables")
     pg_user = os.getenv("PGUSER")
     pg_password = os.getenv("PGPASSWORD")
     pg_host = os.getenv("PGHOST")
@@ -38,9 +65,6 @@ if not DATABASE_URL:
     if pg_user and pg_password and pg_host and pg_database:
         logger.info("Constructing DATABASE_URL from individual PG* variables")
         DATABASE_URL = f"postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_database}"
-    elif os.getenv("DATABASE_PUBLIC_URL"):
-        logger.info("Using DATABASE_PUBLIC_URL as fallback")
-        DATABASE_URL = os.getenv("DATABASE_PUBLIC_URL")
     else:
         logger.error("No valid database connection parameters found")
         sys.exit(1)
@@ -76,7 +100,7 @@ def perform_network_diagnostics(host, port):
         logger.error(f"Failed to resolve hostname {host}: {e}")
         if "railway.internal" in host:
             logger.error("This appears to be a Railway internal DNS issue.")
-            logger.error("Please ensure the PostgreSQL service is properly linked.")
+            logger.error("Please ensure the PostgreSQL service is properly linked or use the public connection")
 
     # Try to connect to the port
     try:
@@ -89,7 +113,7 @@ def perform_network_diagnostics(host, port):
         else:
             logger.error(f"Port {port} is closed on {host}")
             if "railway.internal" in host:
-                logger.error("This indicates a Railway networking issue between services.")
+                logger.error("This indicates a Railway networking issue - consider using the public URL instead")
         sock.close()
     except Exception as e:
         logger.error(f"Socket connection test failed: {e}")
@@ -144,13 +168,13 @@ except Exception as e:
 ADMIN_DB_URL = DATABASE_URL
 
 # For Railway, try to use the 'postgres' database as admin database for more reliable connections
-if "railway.internal" in DB_HOST and DB_NAME != "postgres":
+if DB_NAME != "postgres":
     try:
         parts = urlparse(DATABASE_URL)
         path = "/postgres"  # Try to connect to the postgres database first
         admin_parts = parts._replace(path=path)
         ADMIN_DB_URL = urlunparse(admin_parts)
-        logger.info(f"Using 'postgres' database for admin connection on Railway")
+        logger.info(f"Using 'postgres' database for admin connection")
     except Exception as e:
         logger.error(f"Failed to construct admin URL: {e}")
         # Keep using the original URL
@@ -205,7 +229,7 @@ def attempt_connection(host, port, user, password, database, max_retries=3, retr
             if "railway.internal" in host:
                 if "could not translate host" in error_msg or "could not connect to server" in error_msg:
                     logger.error("This appears to be a Railway networking issue.")
-                    logger.error("Please verify your Railway configuration and service links.")
+                    logger.error("Please use the public connection URL instead.")
 
             retry += 1
             if retry < max_retries:
@@ -351,7 +375,7 @@ if __name__ == "__main__":
     logger.info("Initializing database...")
 
     # Try to create database with retries
-    max_retries = 8
+    max_retries = 5
     retry_count = 0
     retry_delay = 5
 
@@ -368,12 +392,13 @@ if __name__ == "__main__":
             logger.error("Failed to create database after multiple attempts")
             if "railway.internal" in DB_HOST:
                 logger.error("This is likely a Railway networking issue.")
-                logger.error("Please verify that your PostgreSQL service is correctly linked.")
-                logger.error("You may need to recreate the link between your app and PostgreSQL.")
+                logger.error("Please add these environment variables to your Railway project:")
+                logger.error("PUBLIC_DB_HOST=mainline.proxy.rlwy.net")
+                logger.error("PUBLIC_DB_PORT=31284")
             exit(1)
 
     # Create pgvector extension
-    extension_retries = 5
+    extension_retries = 3
     extension_retry_count = 0
     extension_retry_delay = 5
 
@@ -391,7 +416,7 @@ if __name__ == "__main__":
             logger.error("Will attempt to continue without pgvector extension")
 
     # Create tables
-    table_retries = 5
+    table_retries = 3
     table_retry_count = 0
     table_retry_delay = 5
 
