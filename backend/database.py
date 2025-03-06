@@ -2,9 +2,8 @@ import os
 import time
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import OperationalError
-from dotenv import load_dotenv
 import logging
 import sys
 
@@ -12,37 +11,41 @@ import sys
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables without overriding existing ones
-load_dotenv(override=False)
-
-# Get database URL from environment
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    logger.error("DATABASE_URL environment variable is required")
-    sys.exit(1)
-
-# Create SQLAlchemy engine
-try:
-    engine = create_engine(
-        DATABASE_URL,
-        connect_args={"connect_timeout": 30},
-        pool_pre_ping=True,
-        pool_recycle=3600,
-        echo=True
-    )
-    logger.info("Database engine created successfully")
-except Exception as e:
-    logger.error(f"Failed to create database engine: {str(e)}")
-    sys.exit(1)
-
-# Create session factory
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Base class for models
+# Initialize global variables
+engine = None
+SessionLocal = None
 Base = declarative_base()
 
-def get_db():
-    """Dependency to get DB session"""
+def init_engine(database_url=None):
+    """Initialize database engine with the given URL or from environment"""
+    global engine, SessionLocal
+
+    if not database_url:
+        database_url = os.getenv("DATABASE_URL")
+
+    if not database_url:
+        logger.error("DATABASE_URL environment variable is required")
+        sys.exit(1)
+
+    # Create SQLAlchemy engine
+    try:
+        logger.info(f"Initializing database engine with URL: {database_url}")
+        engine = create_engine(
+            database_url,
+            connect_args={"connect_timeout": 30},
+            pool_pre_ping=True,
+            pool_recycle=3600,
+            echo=False  # Disable SQL logging
+        )
+        # Create session factory
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        logger.info("Database engine created successfully")
+    except Exception as e:
+        logger.error(f"Failed to create database engine: {str(e)}")
+        sys.exit(1)
+
+def get_db() -> Session:
+    """Get database session"""
     db = SessionLocal()
     try:
         yield db
@@ -51,6 +54,9 @@ def get_db():
 
 def init_db():
     """Initialize database with retries"""
+    if not engine:
+        raise RuntimeError("Database engine not initialized. Call init_engine() first.")
+
     from models import Base
     max_retries = 5
     retry_count = 0

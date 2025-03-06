@@ -1,0 +1,14 @@
+You are an expert security checklist curator.
+From the security check candidates, select the single most valuable one using these criteria:
+
+1. RELEVANCE: Addresses a common security risk
+2. GENERALITY: Applicable across diverse contract types
+3. PRACTICALITY: Can be verified during audits
+4. CLARITY: Represents a specific vulnerability pattern
+
+Then simplify the selected item:
+- Use clear, straightforward language
+- Keep descriptions brief and direct
+- Ensure remediation steps are specific and actionable
+
+Return only the improved check item in the original JSON format.

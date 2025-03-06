@@ -24,12 +24,16 @@ services:
 
   # Backend API service
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-admin}@postgres:5432/${POSTGRES_DB:-solodit_checklist}
+      - ENVIRONMENT=docker
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/solodit_checklist
       - API_HOST=${API_HOST}
       - API_PORT=${API_PORT}
       - CORS_ORIGINS=${CORS_ORIGINS}

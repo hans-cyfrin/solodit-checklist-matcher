@@ -7,29 +7,13 @@ import torch
 from sentence_transformers import SentenceTransformer
 import time
 from dotenv import load_dotenv
+from openrouter import chat_completion
 
 # Load environment variables
 load_dotenv()
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Get logger
 logger = logging.getLogger(__name__)
-
-# Initialize OpenAI client
-openai_api_key = os.getenv("OPENAI_API_KEY")
-client = None
-
-# Only import OpenAI if the API key is available
-if openai_api_key:
-    try:
-        import openai
-        client = openai.Client(api_key=openai_api_key)
-        logger.info("OpenAI client initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize OpenAI client: {str(e)}")
-        client = None
-else:
-    logger.warning("OPENAI_API_KEY not found in environment variables. OpenAI preprocessing will be disabled.")
 
 # Check NumPy version and handle compatibility issues
 try:
@@ -104,68 +88,6 @@ def get_model():
             return None
     return _model
 
-async def preprocess_with_openai(text: str) -> str:
-    """
-    Preprocess text using OpenAI GPT-3.5 Turbo to clean and summarize content.
-    
-    Args:
-        text (str): The raw text to preprocess
-        
-    Returns:
-        str: The cleaned and summarized text
-    """
-    if not text or not isinstance(text, str) or not text.strip():
-        logger.warning("Empty or invalid text provided for preprocessing")
-        return text
-
-    # Check if OpenAI client is initialized
-    if client is None:
-        logger.warning("OpenAI client not initialized. Skipping preprocessing.")
-        return text
-
-    try:
-        # Create a prompt for GPT to clean and summarize the text
-        system_prompt = "You are a helpful assistant that cleans and summarizes technical content, focusing on security vulnerabilities and technical details."
-        user_prompt = """
-        Please clean and summarize the following text, focusing only on the core technical content:
-        1. Remove code blocks, unnecessary formatting, and non-essential characters
-        2. Extract and summarize only the key technical points and security issues
-        3. Keep important technical details but remove redundant explanations
-        4. Format the output as plain text with no markdown or code blocks 
-        5. Do not include any additional text or comments
-        6. Limit the output to 100 words
-
-        Here is the text to process:
-        
-        """ + text
-
-        # Create the completion
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            max_tokens=1000,
-            temperature=0.3
-        )
-
-        # Extract the processed text from the response
-        if response and hasattr(response, 'choices') and len(response.choices) > 0:
-            processed_text = response.choices[0].message.content.strip()
-
-            # Log the preprocessing results
-            logger.info(f"Text preprocessed with OpenAI. Original length: {len(text)}, Processed length: {len(processed_text)}")
-
-            return processed_text
-        else:
-            logger.warning("OpenAI returned an empty or invalid response")
-            return text
-
-    except Exception as e:
-        logger.error(f"Error preprocessing text with OpenAI: {str(e)}")
-        # Fall back to the original text if preprocessing fails
-        return text
 
 def generate_embedding(text: str) -> np.ndarray:
     """

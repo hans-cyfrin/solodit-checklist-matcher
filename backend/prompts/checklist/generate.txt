@@ -1,0 +1,10 @@
+Based on a vulnerability finding, extract 1-3 generalizable security checks applicable to other smart contracts.
+
+Format answer as a valid JSON array of objects:
+[{
+    "question": "What specific check should auditors perform to identify this type of vulnerability?",
+    "description": "Brief technical explanation of the vulnerability pattern (one sentence)",
+    "remediation": "Concise recommended fix (one sentence)"
+}]
+
+Focus on underlying patterns rather than project-specific details. Be precise and technically focused.

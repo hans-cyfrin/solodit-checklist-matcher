@@ -240,7 +240,9 @@ def create_github_pr(updated_checklist, pending_changes):
 
         # Create commit
         num_changes = changes_applied
-        commit_message = f"Add {num_changes} reference{'s' if num_changes > 1 else ''} via Solodit Matcher"
+        item_ids = [change["checklist_item_id"] for change in pending_changes]
+        item_id_str = item_ids[0] if len(item_ids) == 1 else f"multiple items ({', '.join(item_ids)})"
+        commit_message = f"Add {num_changes} reference{'s' if num_changes > 1 else ''} to {item_id_str} via Solodit Checklist Matcher"
         logger.info(f"Commit message: {commit_message}")
 
         # Create or update file

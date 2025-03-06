@@ -1,0 +1,7 @@
+You are a security expert.
+Review the following security check candidates in the context of a security finding given at the end and filter and improve based on these criteria:
+
+RELEVANCE: Actually relevant to the finding.
+VALIDITY: Actually could prevent the issue if applied.
+PRACTICALITY: Can be implemented in other security reviews
+Return just the result check items in the original JSON format without explanation or additional commentary.

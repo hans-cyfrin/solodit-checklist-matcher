@@ -64,12 +64,19 @@ export interface PendingChange {
   created_at: string;
 }
 
+export interface GeneratedCheckItem {
+  question: string;
+  description: string;
+  remediation: string;
+  confidence: number;
+}
+
 export interface MatchResult {
   matches: ChecklistItem[];
   input_text: string;
   input_url?: string;
-  preprocessed_text?: string;
-  preprocessing_applied?: boolean;
+  generated_items: GeneratedCheckItem[];
+  final_item: GeneratedCheckItem;
 }
 
 // Error handling wrapper for API calls
@@ -90,7 +97,7 @@ const safeApiCall = async (apiCall: () => Promise<any>) => {
 function AppContent() {
   // Theme state
   const [mode, setMode] = useState<'light' | 'dark'>('light');
-  
+
   // Create theme based on mode
   const theme = useMemo(
     () =>
@@ -469,20 +476,20 @@ function AppContent() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        minHeight: '100vh' 
+      <Box sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: '100vh'
       }}>
         <AppBar position="static">
           <Toolbar>
             {/* Logo and Title */}
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <svg 
-                width="38" 
-                height="38" 
-                viewBox="0 0 38 38" 
-                fill="none" 
+              <svg
+                width="38"
+                height="38"
+                viewBox="0 0 38 38"
+                fill="none"
                 xmlns="http://www.w3.org/2000/svg"
                 style={{ marginRight: '12px' }}
               >
@@ -511,9 +518,9 @@ function AppContent() {
                 Solodit Checklist Matcher
               </Typography>
             </Box>
-            
+
             <Box sx={{ flexGrow: 1 }} />
-            
+
             <Button
               color="inherit"
               onClick={() => setActiveTab('matcher')}
@@ -567,7 +574,7 @@ function AppContent() {
                 )}
               </IconButton>
             </Tooltip>
-            
+
             {/* Theme toggle */}
             <Tooltip title={`Switch to ${mode === 'light' ? 'dark' : 'light'} mode`}>
               <IconButton color="inherit" onClick={toggleTheme}>

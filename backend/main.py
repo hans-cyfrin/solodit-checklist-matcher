@@ -1,3 +1,8 @@
+from logger_config import setup_logging
+
+# Setup logging first, before any other operations
+logger = setup_logging()
+
 import os
 import json
 import datetime
@@ -9,34 +14,72 @@ from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
 from sqlalchemy.sql import text
 from contextlib import asynccontextmanager
-import logging
 
-from database import get_db, init_db
+from database import get_db, init_db, init_engine
 from models import ChecklistItem, PendingChange
-from embeddings import generate_checklist_item_embedding, semantic_search, preprocess_with_openai
+from embeddings import generate_checklist_item_embedding, semantic_search
 from github_integration import fetch_checklist_from_github, create_github_pr
+from openrouter import chat_completion
+from utils import clean_json_response
+from prompts import PROMPTS
 
-# Load environment variables
-load_dotenv()
+
+# Load environment variables first
+load_dotenv(override=True)  # Explicitly override any existing env vars with .env file
+
+# Environment Configuration
+ENVIRONMENT = os.getenv("ENVIRONMENT", "local")  # 'local' or 'docker'
+IS_DOCKER = ENVIRONMENT == "docker"
+
+# Database configuration
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://postgres:postgres@localhost:5432/solodit_checklist" if not IS_DOCKER else "postgresql://postgres:postgres@postgres:5432/solodit_checklist"
+)
+
+# Configure CORS based on environment
+DEFAULT_CORS = "http://localhost:3000" if not IS_DOCKER else "http://localhost"
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", DEFAULT_CORS).split(",")
+
+# Initialize database
+init_engine(DATABASE_URL)
+
+# Pydantic models for API
+class ChecklistItemBase(BaseModel):
+    id: str
+    category: str
+    question: str
+    description: str
+    remediation: str
+    references: List[str]
+    score: Optional[float] = None
+
+    class Config:
+        from_attributes = True
+
+class GeneratedCheckItem(BaseModel):
+    question: str
+    description: str
+    remediation: str
+
+class MatchResult(BaseModel):
+    matches: List[ChecklistItemBase]
+    input_text: str
+    input_url: Optional[HttpUrl] = None
+    generated_items: List[GeneratedCheckItem]
+    filtered_items: List[GeneratedCheckItem]
+    final_item: GeneratedCheckItem
+
+    class Config:
+        from_attributes = True
 
 # Set Huggingface tokenizers parallelism to avoid warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-)
-logger = logging.getLogger(__name__)
-
-# Set third-party loggers to WARNING level to reduce noise
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("github").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
-logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
-logging.getLogger("transformers").setLevel(logging.WARNING)
-logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+# Initialize OpenRouter client
+# openrouter_client = create_openrouter_client()
+# if not openrouter_client:
+#     logger.error("Failed to initialize OpenRouter client. Please check your API key and configuration.")
 
 # Initialize database on startup
 @asynccontextmanager
@@ -59,10 +102,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Solodit Checklist Matcher", lifespan=lifespan)
 
 # Configure CORS
-cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
@@ -103,37 +145,38 @@ async def get_checklist(db: Session = Depends(get_db)):
 
 @app.post("/match")
 async def match_text(request: Request, match_request: MatchRequest, db: Session = Depends(get_db)):
-    # Validate input
     if not match_request.text.strip():
         raise HTTPException(status_code=400, detail="Input text cannot be empty")
 
     try:
-        # Get all checklist items with embeddings
+        # Step 1: Generate potential check items using AI
+        generated_items = await generate_check_items(match_request.text)
+        if not generated_items:
+            logger.warning("Failed to generate items")
+            raise HTTPException(status_code=500, detail="Failed to generate items")
+
+        # Step 2: Cross-validate and filter items
+        filtered_items = await validate_check_items(generated_items, match_request.text)
+        if not filtered_items:
+            logger.warning("Failed to validate items, using generated items")
+            filtered_items = generated_items
+
+        # Step 3: Choose and improve the best item
+        final_item = await improve_check_item(filtered_items[0] if filtered_items else None, match_request.text)
+        if not final_item:
+            logger.warning("Failed to improve item, using first filtered item")
+            final_item = filtered_items[0] if filtered_items else generated_items[0]
+
+        # Step 4: Use the final item to find matches
         items = db.query(ChecklistItem).all()
         embeddings = [(item.id, item.embedding) for item in items if item.embedding is not None]
 
         if not embeddings:
-            raise HTTPException(status_code=500, detail="No checklist items with embeddings found. Please ensure the database is properly initialized.")
+            raise HTTPException(status_code=500, detail="No checklist items with embeddings found")
 
-        # Default to using the original text
-        preprocessed_text = match_request.text
-        preprocessing_applied = False
-
-        # Try to preprocess the input text with OpenAI
-        try:
-            processed = await preprocess_with_openai(match_request.text)
-            # Only use the preprocessed text if it's not empty and different from the original
-            if processed and processed != match_request.text:
-                preprocessed_text = processed
-                preprocessing_applied = True
-                logger.info(f"Using preprocessed text for matching. Original length: {len(match_request.text)}, Processed length: {len(preprocessed_text)}")
-            else:
-                logger.info("Using original text for matching (no preprocessing applied)")
-        except Exception as e:
-            logger.warning(f"Error in preprocessing: {str(e)}. Using original text.")
-
-        # Perform semantic search with the text (preprocessed or original)
-        matches = semantic_search(preprocessed_text, embeddings, top_k=10)
+        # Create a combined text from the final item for matching
+        search_text = f"{final_item.question} {final_item.description} {final_item.remediation}"
+        matches = semantic_search(search_text, embeddings, top_k=10)
 
         # Get matched items
         matched_items = []
@@ -149,8 +192,9 @@ async def match_text(request: Request, match_request: MatchRequest, db: Session 
             "matches": matched_items,
             "input_text": match_request.text,
             "input_url": match_request.url,
-            "preprocessed_text": preprocessed_text,
-            "preprocessing_applied": preprocessing_applied
+            "generated_items": generated_items,
+            "filtered_items": filtered_items,
+            "final_item": final_item
         }
 
         return response_data
@@ -484,14 +528,14 @@ async def sync_checklist(force_resync=True):
         # Fetch checklist from GitHub
         try:
             checklist_data = await fetch_checklist_from_github()
-            print(f"Fetched checklist data from GitHub at {datetime.datetime.now()}")
+            logger.debug(f"Fetched checklist data from GitHub at {datetime.datetime.now()}")
         except Exception as e:
             error_msg = f"Failed to fetch checklist from GitHub: {str(e)}"
-            print(error_msg)
+            logger.error(error_msg)
             return {"error": error_msg}
 
         if force_resync:
-            print("Force resync enabled - updating all checklist items")
+            logger.debug("Force resync enabled - updating all checklist items")
 
         # Extract all checklist items from the nested structure
         all_items = []
@@ -518,11 +562,11 @@ async def sync_checklist(force_resync=True):
 
         # Process the nested structure
         extract_items(checklist_data)
-        print(f"Extracted {len(all_items)} checklist items from the nested structure")
+        logger.debug(f"Extracted {len(all_items)} checklist items from the nested structure")
 
         # Get all existing items in a single query for better performance
         existing_items = {item.id: item for item in db.query(ChecklistItem).all()}
-        print(f"Found {len(existing_items)} existing items in database")
+        logger.debug(f"Found {len(existing_items)} existing items in database")
 
         # Determine which items need embedding generation
         items_to_update = []
@@ -533,7 +577,7 @@ async def sync_checklist(force_resync=True):
             try:
                 item_id = item.get("id")
                 if not item_id:
-                    print(f"Warning: Item without ID found, skipping: {item}")
+                    logger.warning(f"Item without ID found, skipping: {item}")
                     continue
 
                 # Check if item exists
@@ -544,7 +588,7 @@ async def sync_checklist(force_resync=True):
                     continue
                 elif existing_item:
                     # Item exists but we're forcing a resync, update it
-                    print(f"Updating existing checklist item: {item_id}")
+                    logger.debug(f"Updating existing checklist item: {item_id}")
                     existing_item.category = item.get("category", "")
                     existing_item.question = item.get("question", "")
                     existing_item.description = item.get("description", "")
@@ -555,7 +599,7 @@ async def sync_checklist(force_resync=True):
                     items_needing_embeddings.append(item)
                 else:
                     # Create new item
-                    print(f"Creating new checklist item: {item_id}")
+                    logger.debug(f"Creating new checklist item: {item_id}")
                     new_item = ChecklistItem(
                         id=item_id,
                         category=item.get("category", ""),
@@ -568,12 +612,12 @@ async def sync_checklist(force_resync=True):
                     items_to_create.append((new_item, item))
                     items_needing_embeddings.append(item)
             except Exception as item_error:
-                print(f"Error processing item {item.get('id', 'unknown')}: {str(item_error)}")
+                logger.error(f"Error processing item {item.get('id', 'unknown')}: {str(item_error)}")
                 continue
 
         # Generate embeddings in batch if there are items needing embeddings
         if items_needing_embeddings:
-            print(f"Generating embeddings for {len(items_needing_embeddings)} items in batch")
+            logger.debug(f"Generating embeddings for {len(items_needing_embeddings)} items in batch")
 
             # Prepare texts for batch embedding
             texts_to_embed = []
@@ -621,7 +665,7 @@ async def sync_checklist(force_resync=True):
         # First commit all updates
         if items_to_update:
             db.commit()
-            print(f"Updated {len(items_to_update)} existing items")
+            logger.info(f"Updated {len(items_to_update)} existing items")
 
         # Then add and commit new items in batches
         total_batches = (len(items_to_create) + batch_size - 1) // batch_size
@@ -631,12 +675,12 @@ async def sync_checklist(force_resync=True):
             for db_item, _ in batch:
                 db.add(db_item)
             db.commit()
-            print(f"Committed batch {i//batch_size + 1}/{total_batches} with {len(batch)} new items")
+            logger.info(f"Committed batch {i//batch_size + 1}/{total_batches} with {len(batch)} new items")
 
         end_time = datetime.datetime.now()
         duration = (end_time - start_time).total_seconds()
 
-        print(f"Checklist sync completed successfully in {duration:.2f} seconds")
+        logger.info(f"Checklist sync completed successfully in {duration:.2f} seconds")
         return {
             "message": "Checklist synced successfully",
             "stats": {
@@ -648,12 +692,165 @@ async def sync_checklist(force_resync=True):
         }
     except Exception as e:
         db.rollback()
-        print(f"Error syncing checklist: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error syncing checklist: {str(e)}")
         return {"error": f"Failed to sync checklist: {str(e)}"}
     finally:
         db.close()
+
+async def generate_check_items(text: str) -> List[GeneratedCheckItem]:
+    """Generate search text using AI to better match against checklist items"""
+    try:
+        user_prompt = PROMPTS['generate'] + f"\n```\n{text}\n```"
+        logger.info(f"Sending generate prompt:\n{user_prompt}")
+
+        response = chat_completion(
+            user_prompt,
+            model="anthropic/claude-3.7-sonnet"
+        )
+        if not response:
+            logger.error("Failed to get response from OpenRouter")
+            return []
+
+        logger.info(f"Received generate response:\n{response}")
+
+        try:
+            # Clean the response - remove any markdown code block markers
+            cleaned_response = clean_json_response(response)
+            cleaned_response = cleaned_response.replace('```json', '').replace('```', '').strip()
+            logger.info(f"Cleaned response:\n{cleaned_response}")
+
+            parsed_response = json.loads(cleaned_response)
+            logger.info(f"Parsed response type: {type(parsed_response)}")
+            logger.info(f"Parsed response content:\n{json.dumps(parsed_response, indent=2)}")
+
+            # Handle both array and single object responses
+            if isinstance(parsed_response, dict):
+                items = [parsed_response]
+            elif isinstance(parsed_response, list):
+                items = parsed_response
+            else:
+                logger.error(f"Response is neither an object nor an array: {type(parsed_response)}")
+                return []
+
+            # Log the items before validation
+            logger.info(f"Items before validation:\n{json.dumps(items, indent=2)}")
+
+            result = [GeneratedCheckItem(**item) for item in items]
+            logger.info(f"Successfully created {len(result)} GeneratedCheckItem objects")
+            return result
+
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            logger.error(f"Failed to parse response: {str(e)}")
+            logger.error(f"Response that failed to parse: {response}")
+            return []
+
+    except Exception as e:
+        logger.error(f"Error generating check items: {str(e)}")
+        logger.exception("Full traceback:")
+        return []
+
+async def validate_check_items(items: List[GeneratedCheckItem], original_text: str) -> List[GeneratedCheckItem]:
+    """Cross-validate generated items with another model"""
+    try:
+        items_json = json.dumps([item.dict() for item in items])
+        user_prompt = f"{PROMPTS['validate']}\n\nItems: {items_json} \n\nFinding: {original_text}"
+        logger.info(f"Sending validate prompt:\n{user_prompt}")
+
+        response = chat_completion(
+            user_prompt,
+            model="anthropic/claude-3-sonnet-20240229"
+        )
+        if not response:
+            logger.error("Failed to get response from OpenRouter")
+            return items
+
+        logger.info(f"Received validate response:\n{response}")
+
+        try:
+            cleaned_response = clean_json_response(response)
+            cleaned_response = cleaned_response.replace('```json', '').replace('```', '').strip()
+            logger.info(f"Cleaned validate response:\n{cleaned_response}")
+
+            parsed_response = json.loads(cleaned_response)
+            logger.info(f"Parsed validate response type: {type(parsed_response)}")
+            logger.info(f"Parsed validate response content:\n{json.dumps(parsed_response, indent=2)}")
+
+            # Handle both array and single object responses
+            if isinstance(parsed_response, dict):
+                validated_items = [parsed_response]
+            elif isinstance(parsed_response, list):
+                validated_items = parsed_response
+            else:
+                logger.error(f"Invalid response format: {type(parsed_response)}")
+                return items
+
+            # Log the items before validation
+            logger.info(f"Validate items before validation:\n{json.dumps(validated_items, indent=2)}")
+
+            result = [GeneratedCheckItem(**item) for item in validated_items]
+            logger.info(f"Successfully created {len(result)} GeneratedCheckItem objects from validation")
+            return result
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            logger.error(f"Error parsing OpenRouter response: {str(e)}")
+            logger.error(f"Response that failed to parse: {response}")
+            return items
+    except Exception as e:
+        logger.error(f"Error validating check items: {str(e)}")
+        logger.exception("Full traceback:")
+        return items
+
+async def improve_check_item(item: Optional[GeneratedCheckItem], original_text: str) -> GeneratedCheckItem:
+    """Improve the best candidate item"""
+    try:
+        if not item:
+            # Generate a new item if none provided
+            return (await generate_check_items(original_text))[0]
+
+        user_prompt = f"{PROMPTS['improve']}\n\nItems: {json.dumps(item.dict())}"
+        logger.info(f"Sending improve prompt:\n{user_prompt}")
+
+        response = chat_completion(
+            user_prompt,
+            model="anthropic/claude-3-opus-20240229"
+        )
+        if not response:
+            logger.error("Failed to get response from OpenRouter")
+            return item
+
+        logger.info(f"Received improve response:\n{response}")
+
+        try:
+            cleaned_response = clean_json_response(response)
+            cleaned_response = cleaned_response.replace('```json', '').replace('```', '').strip()
+            logger.info(f"Cleaned improve response:\n{cleaned_response}")
+
+            parsed_response = json.loads(cleaned_response)
+            logger.info(f"Parsed improve response type: {type(parsed_response)}")
+            logger.info(f"Parsed improve response content:\n{json.dumps(parsed_response, indent=2)}")
+
+            # Handle both object and array responses
+            if isinstance(parsed_response, list) and len(parsed_response) > 0:
+                improved_item = parsed_response[0]
+            elif isinstance(parsed_response, dict):
+                improved_item = parsed_response
+            else:
+                logger.error(f"Invalid response format: {type(parsed_response)}")
+                return item
+
+            # Log the item before validation
+            logger.info(f"Improve item before validation:\n{json.dumps(improved_item, indent=2)}")
+
+            result = GeneratedCheckItem(**improved_item)
+            logger.info("Successfully created improved GeneratedCheckItem object")
+            return result
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            logger.error(f"Error parsing OpenRouter response: {str(e)}")
+            logger.error(f"Response that failed to parse: {response}")
+            return item
+    except Exception as e:
+        logger.error(f"Error improving check item: {str(e)}")
+        logger.exception("Full traceback:")
+        return item
 
 # Run the application
 if __name__ == "__main__":
