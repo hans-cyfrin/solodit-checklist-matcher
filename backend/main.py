@@ -23,19 +23,19 @@ from openrouter import chat_completion
 from utils import clean_json_response
 from prompts import PROMPTS
 
-
-# Load environment variables first
-load_dotenv(override=True)  # Explicitly override any existing env vars with .env file
-
 # Environment Configuration
 ENVIRONMENT = os.getenv("ENVIRONMENT", "local")  # 'local' or 'docker'
 IS_DOCKER = ENVIRONMENT == "docker"
 
+if not IS_DOCKER:
+    # Load environment variables first
+    load_dotenv(override=True)
+else:
+    load_dotenv()
 # Database configuration
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/solodit_checklist" if not IS_DOCKER else "postgresql://postgres:postgres@postgres:5432/solodit_checklist"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is not set")
 
 # Configure CORS based on environment
 DEFAULT_CORS = "http://localhost:3000" if not IS_DOCKER else "http://localhost"
